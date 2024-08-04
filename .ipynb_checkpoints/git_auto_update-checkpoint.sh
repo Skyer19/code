@@ -5,7 +5,7 @@
 
 cd /data/mr423/project/code/
 
-pwd
+echo 'Current time: $(data)'
 
 # Add all changes to the staging area
 git add .
