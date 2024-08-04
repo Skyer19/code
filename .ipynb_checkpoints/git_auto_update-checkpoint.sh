@@ -5,7 +5,7 @@
 
 cd /data/mr423/project/code/
 
-echo 'Current time: $(data)'
+echo 'Current time: $(date)'
 
 # Add all changes to the staging area
 git add .
