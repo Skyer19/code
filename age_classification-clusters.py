@@ -69,7 +69,7 @@ hyperparameter_defaults = dict(
     seed=0,
     # dataset_name="ms",
     do_train=True,
-    load_model="../pre_trained_model/scGPT_blood",
+    load_model="/data/mr423/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
     epochs=args.epochs,
     n_bins=51,
@@ -193,14 +193,14 @@ DAB_separate_optim = True if DAB > 1 else False
 
 
 dataset_name = 'biobank-age'
-save_dir = Path(f"./save/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
+save_dir = Path(f"../save/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
 logger = scg.logger
 scg.utils.add_file_handler(logger, save_dir / "run.log")
 
-adata = sc.read("./data/3-OLINK_data_sub_train.h5ad")
-adata_test = sc.read("./data/3-OLINK_data_sub_test.h5ad")
+adata = sc.read("../data/3-OLINK_data_sub_train.h5ad")
+adata_test = sc.read("../data/3-OLINK_data_sub_test.h5ad")
 
 adata.obs["batch_id"]  = adata.obs["str_batch"] = "0"
 adata_test.obs["batch_id"]  = adata_test.obs["str_batch"] = "1" 
