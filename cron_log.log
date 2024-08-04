@@ -11,3 +11,11 @@ Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
 fatal: not a git repository (or any parent up to mount point /)
 Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
 /data/mr423/project/code
+[master 96756c7] auto update
+ 4 files changed, 41 insertions(+)
+ create mode 100644 .ipynb_checkpoints/cron_log-checkpoint.log
+ create mode 100755 .ipynb_checkpoints/git_auto_update-checkpoint.sh
+ create mode 100644 cron_log.log
+To github.com:Skyer19/code.git
+   98e31a9..96756c7  master -> master
+/data/mr423/project/code
