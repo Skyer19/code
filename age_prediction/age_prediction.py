@@ -69,6 +69,8 @@ from scgpt.utils import set_seed, category_str2int, eval_scib_metrics
 sc.set_figure_params(figsize=(6, 6))
 
 os.environ["KMP_WARNINGS"] = "off"
+# os.environ["WANDB_MODE"]= "offline"
+
 warnings.filterwarnings('ignore')
 
 ######################################################################
@@ -78,17 +80,17 @@ warnings.filterwarnings('ignore')
 hyperparameter_defaults = dict(
     seed=0,
     do_train=True,
-    load_model="../../pre_trained_model/scGPT_blood",
+    load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=500,
+    epochs=5,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
     lr=0.001,
-    batch_size=256,
-    layer_size=128,
-    nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    batch_size=128,
+    layer_size=128, # 128
+    nlayers=8,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder。4
     nhead=4,  # number of heads in nn.MultiheadAttention
     dropout=0.0,  # dropout probability
     schedule_ratio=0.9,  # ratio of epochs for learning rate schedule
@@ -224,8 +226,8 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 ######################################################################
 # Data loading
 ######################################################################
-adata = sc.read("../../data/3-OLINK_data_sub_train.h5ad")
-adata_test = sc.read("../../data/3-OLINK_data_sub_test.h5ad")
+adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train.h5ad")
+adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test.h5ad")
 
 adata.obs["batch_id"]  = adata.obs["str_batch"] = "0"
 adata_test.obs["batch_id"]  = adata_test.obs["str_batch"] = "1" 
@@ -302,14 +304,14 @@ preprocessor = Preprocessor(
     use_key="X",  # the key in adata.layers to use as raw data
     filter_gene_by_counts=filter_gene_by_counts,  # step 1
     filter_cell_by_counts=False,  # step 2
-    normalize_total=1e4,  # 3. whether to normalize the raw data and to what sum
+    normalize_total=3000,  # 3. whether to normalize the raw data and to what sum
     result_normed_key="X_normed",  # the key in adata.layers to store the normalized data
     log1p=data_is_raw,  # 4. whether to log1p the normalized data
     result_log1p_key="X_log1p",
     subset_hvg=False,  # 5. whether to subset the raw data to highly variable genes
     hvg_flavor="seurat_v3" if data_is_raw else "cell_ranger",
-    binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
-    result_binned_key="X_binned",  # the key in adata.layers to store the binned data
+    # binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
+    # result_binned_key="X_binned",  # the key in adata.layers to store the binned data
 )
 
 
@@ -326,7 +328,8 @@ preprocessor(adata_test, batch_key=None)
 input_layer_key = {  # the values of this map coorespond to the keys in preprocessing
     "normed_raw": "X_normed",
     "log1p": "X_normed",
-    "binned": "X_binned",
+    # "binned": "X_binned",
+    "binned": "X_normed",
 }[input_style]
 all_counts = (
     adata.layers[input_layer_key].A
@@ -464,9 +467,9 @@ def prepare_dataloader(
 ######################################################################
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-ntokens = len(vocab)  # size of vocabulary
+ntokens = len(vocab)  # size of gene vocabulary
 model = TransformerModel(
-    ntokens,
+    ntokens,    # size of gene vocabulary
     embsize,
     nhead,
     d_hid,
@@ -516,8 +519,8 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 for name, para in model.named_parameters():
     # print("-"*20)
     # print(f"name: {name}")
-    # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-    if config.freeze and "encoder" in name:
+    if config.freeze and "encoder" in name and "transformer_encoder" not in name:
+    # if config.freeze and "encoder" in name:
         # print(f"freezing weights for: {name}")
         para.requires_grad = False
 
@@ -548,7 +551,7 @@ criterion_cls = nn.MSELoss()
 # criterion_cls = NonNegativeMSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0)
+# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0)
 
 ######################################################################
 # Train the model
@@ -567,10 +570,20 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     num_batches = len(loader)
     for batch, batch_data in enumerate(loader):
         
-        input_gene_ids = batch_data["gene_ids"].to(device)
-        input_values = batch_data["values"].to(device)
+        input_gene_ids = batch_data["gene_ids"].to(device)        # torch.Size([batch_size, 2890]) -- (batch_size, seq_len)
+        input_values = batch_data["values"].to(device)            # torch.Size([batch_size, 2890]) -- (batch_size, seq_len)
         age = batch_data["age"].to(device)
 
+        # print("input_gene_ids shape: ", input_gene_ids.shape)
+
+        '''
+        src_key_padding_mask是一个布尔型张量,形状与 input_gene_ids 相同，即 (batch_size, seq_len)。
+        它指示哪些位置是填充的True, 哪些位置是有效的输入 False 
+        
+        input_gene_ids.eq(vocab[pad_token]) 将会对每个位置检查是否等于 pad_token 的索引。如果是，返回 True, 否则返回 False
+
+        在 Transformer 模型中用于防止填充部分影响模型的学习过程。通过标记填充位置，模型在进行自注意力计算时可以忽略这些无意义的部分
+        '''
         src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
         
         optimizer.zero_grad()  # Clear previous gradients
@@ -792,7 +805,7 @@ for epoch in range(1, epochs + 1):
     f" r2 {total_r2:5.4f} | mape {total_mape:5.4f}")
     logger.info("-" * 89)
 
-    scheduler.step()
+    # scheduler.step()
 
 
     if val_loss < best_val_loss:
@@ -803,4 +816,4 @@ for epoch in range(1, epochs + 1):
     
 
 # save the model into the save_dir
-# torch.save(best_model.state_dict(), save_dir / "model.pt")
+torch.save(best_model.state_dict(), save_dir / "model.pt")
