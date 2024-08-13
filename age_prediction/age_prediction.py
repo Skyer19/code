@@ -80,17 +80,17 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="../../pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=100,
+    epochs=500,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
-    lr=1e-3,
-    batch_size=32,
+    lr=0.001,
+    batch_size=256,
     layer_size=128,
     nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=4,  # number of heads in nn.MultiheadAttention
-    dropout=0.5,  # dropout probability
+    dropout=0.0,  # dropout probability
     schedule_ratio=0.9,  # ratio of epochs for learning rate schedule
     save_eval_interval=5,
     fast_transformer=True,
@@ -548,7 +548,7 @@ criterion_cls = nn.MSELoss()
 # criterion_cls = NonNegativeMSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1)
-
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0)
 
 ######################################################################
 # Train the model
@@ -580,7 +580,8 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 input_gene_ids,
                 input_values,
                 src_key_padding_mask=src_key_padding_mask,
-                batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
+                # batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
+                batch_labels=None,
                 CLS=CLS,
                 CCE=CCE,
                 MVC=MVC,
@@ -593,11 +594,11 @@ def train(model: nn.Module, loader: DataLoader) -> None:
             metrics_to_log = {}
                 
             # loss = criterion_cls(apply_sigmoid(output_dict["cls_output"]), age)
-            output_values = output_dict["cls_output"]
+            output_values = output_dict["reg_output"]
             loss = criterion_cls(output_values, age)
 
-            print("output : ",output_values)
-            print("ground : ",age)
+            # print("output : ",output_values)
+            # print("ground : ",age)
             
             # print("output after apply_sigmoid: ",apply_sigmoid(output_dict["cls_output"]))
 
@@ -634,13 +635,125 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     wandb.log(metrics_to_log)
 
 
+######################################################################
+# 定义评估指标函数
+######################################################################
+def mean_absolute_error(y_true, y_pred):
+    return torch.mean(torch.abs(y_true - y_pred)).item()
+
+def mean_squared_error(y_true, y_pred):
+    return torch.mean((y_true - y_pred) ** 2).item()
+
+def root_mean_squared_error(y_true, y_pred):
+    return torch.sqrt(torch.mean((y_true - y_pred) ** 2)).item()
+
+def r_squared(y_true, y_pred):
+    y_mean = torch.mean(y_true)
+    total_variance = torch.sum((y_true - y_mean) ** 2)
+    residual_variance = torch.sum((y_true - y_pred) ** 2)
+    return 1 - (residual_variance / total_variance).item()
+
+def mean_absolute_percentage_error(y_true, y_pred):
+    return torch.mean(torch.abs((y_true - y_pred) / y_true)).item() * 100
+
+######################################################################
+# Evaluate the model
+######################################################################
+def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> float:
+    """
+    Evaluate the model on the evaluation data.
+    """
+    model.eval()
+    total_loss = 0.0
+    total_num = 0
+
+    all_preds = []
+    all_targets = []
+    
+    with torch.no_grad():
+        for batch_data in loader:
+            input_gene_ids = batch_data["gene_ids"].to(device)
+            input_values = batch_data["values"].to(device)
+            age = batch_data["age"].to(device)
+
+            src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
+            with torch.cuda.amp.autocast(enabled=config.amp):
+                output_dict = model(
+                    input_gene_ids,
+                    input_values,
+                    src_key_padding_mask=src_key_padding_mask,
+                    # batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
+                    batch_labels=None,
+                    CLS=CLS,  # evaluation does not need CLS or CCE
+                    CCE=False,
+                    MVC=False,
+                    ECS=False,
+                    do_sample=do_sample_in_train,
+                    #generative_training = False,
+                )
+                
+                output_values = output_dict["reg_output"]
+                loss = criterion_cls(output_values, age)
+
+                # print("evaluate loss: ",loss)
+
+            total_loss += loss.item() * len(input_gene_ids)     
+            total_num += len(input_gene_ids)
+
+            
+            # 保存预测值和真实值以计算其他评估指标
+            all_preds.append(output_values.cpu())
+            all_targets.append(age.cpu())
+
+    # 将所有批次的预测值和真实值连接起来
+    all_preds = torch.cat(all_preds)
+
+    # print('all_preds :', all_preds)
+    all_targets = torch.cat(all_targets)
+    # print('all_targets :', all_targets)
+    
+    # 计算其他评估指标
+    total_mae = mean_absolute_error(all_targets, all_preds)
+    total_rmse = root_mean_squared_error(all_targets, all_preds)
+    total_r2 = r_squared(all_targets, all_preds)
+    total_mape = mean_absolute_percentage_error(all_targets, all_preds)
+
+    wandb.log(
+        {
+            "valid/mse": total_loss / total_num,
+            "valid/mae": total_mae,
+            "valid/rmse": total_rmse,
+            "valid/r2": total_r2,
+            "valid/mape": total_mape,
+            "epoch": epoch,
+        },
+    )
+    
+    return total_loss / total_num, total_mae, total_rmse, total_r2, total_mape
+
+
+    # wandb.log(
+    #     {
+    #         "valid/mse": total_loss / total_num,
+    #         "epoch": epoch,
+    #     },
+    # )
+
+
+    # return total_loss / total_num
+
+
+######################################################################
+# 训练和验证循环
+######################################################################
+
 best_val_loss = float("inf")
 best_model = None
 
 
 logger.info("Apply the model on the age of the prediction \n")
 
-for epoch in range(1, 10 + 1):
+for epoch in range(1, epochs + 1):
     epoch_start_time = time.time()
     train_data_pt, valid_data_pt = prepare_data(sort_seq_batch=per_seq_batch_sample)
 
@@ -652,39 +765,41 @@ for epoch in range(1, 10 + 1):
         drop_last=False,
     )
 
-    # valid_loader = prepare_dataloader(
-    #     valid_data_pt,
-    #     batch_size=eval_batch_size,
-    #     shuffle=False,
-    #     intra_domain_shuffle=False,
-    #     drop_last=False,
-    # )
+    valid_loader = prepare_dataloader(
+        valid_data_pt,
+        batch_size=eval_batch_size,
+        shuffle=False,
+        intra_domain_shuffle=False,
+        drop_last=False,
+    )
 
 
     if config.do_train:
         train(model,loader=train_loader,)
 
 
-    # val_loss, total_mae, total_rmse, total_r2, total_mape = evaluate(model,loader=valid_loader)
+    val_loss, total_mae, total_rmse, total_r2, total_mape = evaluate(model,loader=valid_loader)
     
     # scheduler.step(val_loss)  # 更新学习率调度器
 
     
-    # elapsed = time.time() - epoch_start_time
+    elapsed = time.time() - epoch_start_time
     
-    # logger.info("-" * 89)
-    # logger.info(
-    # f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | mse {val_loss:5.4f} | " 
-    # f" mae {total_mae:5.4f} | rmse {total_rmse:5.4f} | " 
-    # f" r2 {total_r2:5.4f} | mape {total_mape:5.4f}")
-    # logger.info("-" * 89)
+    logger.info("-" * 89)
+    logger.info(
+    f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | mse {val_loss:5.4f} | " 
+    f" mae {total_mae:5.4f} | rmse {total_rmse:5.4f} | " 
+    f" r2 {total_r2:5.4f} | mape {total_mape:5.4f}")
+    logger.info("-" * 89)
+
+    scheduler.step()
 
 
-    # if val_loss < best_val_loss:
-    #     best_val_loss = val_loss
-    #     best_model = copy.deepcopy(model)
-    #     best_model_epoch = epoch
-    #     logger.info(f"Best model with score {best_val_loss:5.4f}")
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_model = copy.deepcopy(model)
+        best_model_epoch = epoch
+        logger.info(f"Best model with score {best_val_loss:5.4f}")
     
 
 # save the model into the save_dir

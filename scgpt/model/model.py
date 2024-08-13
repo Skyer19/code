@@ -157,7 +157,8 @@ class TransformerModel(nn.Module):
         self.sim = Similarity(temp=0.5)  # TODO: auto set temp
         # self.creterion_cce = nn.CrossEntropyLoss()
 
-        self.ContinuousValueDecoder() ???
+        self.continous_decoder = ContinuousValueDeoder(d_model, nlayers)
+        self.reg_decoder = TransformerDecoder(d_model)
 
         self.init_weights()
 
@@ -353,33 +354,36 @@ class TransformerModel(nn.Module):
             batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
 
         output = {}
-        mlm_output = self.decoder(
-            transformer_output
-            if not self.use_batch_labels
-            else torch.cat(
-                [
-                    transformer_output,
-                    batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
-                ],
-                dim=2,
-            ),
-            # else transformer_output + batch_emb.unsqueeze(1),
-        )
-        if self.explicit_zero_prob and do_sample:
-            bernoulli = Bernoulli(probs=mlm_output["zero_probs"])
-            output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
-        else:
-            output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
-        if self.explicit_zero_prob:
-            output["mlm_zero_probs"] = mlm_output["zero_probs"]
+        # mlm_output = self.decoder(
+        #     transformer_output
+        #     if not self.use_batch_labels
+        #     else torch.cat(
+        #         [
+        #             transformer_output,
+        #             batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
+        #         ],
+        #         dim=2,
+        #     ),
+        #     # else transformer_output + batch_emb.unsqueeze(1),
+        # )
+        # if self.explicit_zero_prob and do_sample:
+        #     bernoulli = Bernoulli(probs=mlm_output["zero_probs"])
+        #     output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
+        # else:
+        #     output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
+        # if self.explicit_zero_prob:
+        #     output["mlm_zero_probs"] = mlm_output["zero_probs"]
 
         
         cell_emb = self._get_cell_emb_from_layer(transformer_output, values)
         output["cell_emb"] = cell_emb
 
 
-        if CLS:
-            output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
+        output["reg_output"] = self.reg_decoder(cell_emb)
+
+
+        # if CLS:
+        #     output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
         
         ## 对比学习
         # if CCE:
@@ -413,21 +417,21 @@ class TransformerModel(nn.Module):
         #     labels = torch.arange(cos_sim.size(0)).long().to(cell1.device)
         #     output["loss_cce"] = self.creterion_cce(cos_sim, labels)
         
-        if MVC:
-            mvc_output = self.mvc_decoder(
-                cell_emb
-                if not self.use_batch_labels
-                else torch.cat([cell_emb, batch_emb], dim=1),
-                # else cell_emb + batch_emb,
-                self.cur_gene_token_embs,
-            )
-            if self.explicit_zero_prob and do_sample:
-                bernoulli = Bernoulli(probs=mvc_output["zero_probs"])
-                output["mvc_output"] = bernoulli.sample() * mvc_output["pred"]
-            else:
-                output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
-            if self.explicit_zero_prob:
-                output["mvc_zero_probs"] = mvc_output["zero_probs"]
+        # if MVC:
+        #     mvc_output = self.mvc_decoder(
+        #         cell_emb
+        #         if not self.use_batch_labels
+        #         else torch.cat([cell_emb, batch_emb], dim=1),
+        #         # else cell_emb + batch_emb,
+        #         self.cur_gene_token_embs,
+        #     )
+        #     if self.explicit_zero_prob and do_sample:
+        #         bernoulli = Bernoulli(probs=mvc_output["zero_probs"])
+        #         output["mvc_output"] = bernoulli.sample() * mvc_output["pred"]
+        #     else:
+        #         output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
+        #     if self.explicit_zero_prob:
+        #         output["mvc_zero_probs"] = mvc_output["zero_probs"]
         
         # if ECS:
         #     # Here using customized cosine similarity instead of F.cosine_similarity
@@ -447,7 +451,7 @@ class TransformerModel(nn.Module):
         # if self.do_dab:
         #     output["dab_output"] = self.grad_reverse_discriminator(cell_emb)
 
-        print(output.keys())
+        # print(output.keys())
         return output
 
     def encode_batch(
@@ -1066,6 +1070,7 @@ class ContinuousValueDeoder(nn.Module):
         activation: callable = nn.ReLU,
     ):
         super().__init__()
+        
         # module list
         self._decoder = nn.ModuleList()
         for i in range(nlayers - 1):
@@ -1082,3 +1087,16 @@ class ContinuousValueDeoder(nn.Module):
         for layer in self._decoder:
             x = layer(x)
         return self.out_layer(x)
+    
+class TransformerDecoder(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.ReLU(),
+            nn.Linear(d_model // 2, 1)  # Output a single value for regression
+        )
+
+    def forward(self, x):
+        output = self.fc(x)  # Pooling the sequence output to a single vector
+        return output.squeeze(-1)
