@@ -151,12 +151,13 @@ class TransformerModel(nn.Module):
             # 编码器堆叠
             self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
 
-        self.decoder = ExprDecoder(
-            d_model,
-            explicit_zero_prob=explicit_zero_prob,
-            use_batch_labels=use_batch_labels,
-        )
-        self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        # self.decoder = ExprDecoder(
+        #     d_model,
+        #     explicit_zero_prob=explicit_zero_prob,
+        #     use_batch_labels=use_batch_labels,
+        # )
+        # self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        
         # if do_mvc:
         #     self.mvc_decoder = MVCDecoder(
         #         d_model,
@@ -202,6 +203,14 @@ class TransformerModel(nn.Module):
         self.cur_gene_token_embs = src       # src: (batch, seq_len, embsize) or (batch, 2890, d_model) 
 
         values = self.value_encoder(values)  # (batch, seq_len, embsize) -- (batch, seq_len, d_model)
+
+        # print("src: ",src.size())
+        # print("values: ",values.size())
+        
+        
+        # src:  torch.Size([32, 2890, 512])
+        # values:  torch.Size([32, 2890])
+        
         
         '''
         连续值被视为对嵌入表示的一个缩放因子。
@@ -211,11 +220,14 @@ class TransformerModel(nn.Module):
         基因A在特定样本中的表达水平是2, 基因B的表达水平是0.5。通过Scaling, 基因A的嵌入表示会放大, 而基因B的嵌入表示会缩小。
         这使得模型能够在后续的任务中更精确地处理这些基因的差异
         '''
-        if self.input_emb_style == "scaling":
-            values = values.unsqueeze(2)    # (batch, seq_len, d_model) -> (batch, seq_len, 1, d_model)
-            total_embs = src * values
-        else:
-            total_embs = src + values       # 将基因嵌入表示和连续值的嵌入表示结合在一起
+        # if self.input_emb_style == "scaling":
+        #     values = values.unsqueeze(2)    # (batch, seq_len, d_model) -> (batch, seq_len, 1, d_model)
+        #     total_embs = src * values
+        # else:
+        #     total_embs = src + values       # 将基因嵌入表示和连续值的嵌入表示结合在一起
+
+        values = values.unsqueeze(2)
+        total_embs = src * values
 
         # print("total_embs: ",total_embs.size())    # (batch, seq_len, d_model)    
 
@@ -1122,7 +1134,6 @@ class AdversarialDiscriminator(nn.Module):
         return self.out_layer(x)
 
 
-
 class ContinuousValueDeoder(nn.Module):
     def __init__(
         self,
@@ -1150,54 +1161,35 @@ class ContinuousValueDeoder(nn.Module):
             x = layer(x)
         return self.out_layer(x)
     
-class regDecoder(nn.Module):
-    def __init__(self, d_model):
-        super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.ReLU(),
-            nn.Linear(d_model, d_model // 2),
-            nn.ReLU(),
-            nn.Linear(d_model // 2, d_model // 4),
-            nn.ReLU(),
-            nn.Linear(d_model // 4, 1),
-        )
+# class regDecoder(nn.Module):
+#     def __init__(self, d_model):
+#         super().__init__()
+#         self.fc = nn.Sequential(
+#             nn.Linear(d_model, d_model),
+#             nn.ReLU(),
+#             nn.Linear(d_model, d_model // 2),
+#             nn.ReLU(),
+#             nn.Linear(d_model // 2, d_model // 4),
+#             nn.ReLU(),
+#             nn.Linear(d_model // 4, 1),
+#         )
 
-    def forward(self, x):
-        output = self.fc(x)  # Pooling the sequence output to a single vector
-        return output.squeeze(-1)
+#     def forward(self, x):
+#         output = self.fc(x)  # Pooling the sequence output to a single vector
+#         return output.squeeze(-1)
     
-'''
-  (reg_decoder): TransformerDecoder(
-    (fc): Sequential(
-      (0): Linear(in_features=512, out_features=256, bias=True)
-      (1): ReLU()
-      (2): Linear(in_features=256, out_features=1, bias=True)
-    )
-  )
-'''
-
 class RegressionEncoder(nn.Module):
-    def __init__(self, input_dim: int = 128, hidden_dim: int = 64, output_dim: int = 1, dropout: float = 0.1):
+    def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.3):
         super(RegressionEncoder, self).__init__()
         # 定义第一层线性变换
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.dropout = nn.Dropout(dropout)
+        self.fc1 = nn.Linear(d_model, d_model // 2)
         self.activation = nn.ReLU()
-
-        # 如果需要更多层，可以继续添加
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, output_dim)  # 最后一层线性层，输出一个标量值
+        self.dropout = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(d_model // 2, output_dim)
 
     def forward(self, x):
-        # 输入经过第一层线性层，ReLU 激活，和 Dropout 层
+
         x = self.activation(self.fc1(x))
         x = self.dropout(x)
-
-        # 经过第二层线性层，同样使用 ReLU 激活和 Dropout
-        x = self.activation(self.fc2(x))
-        x = self.dropout(x)
-
-        # 最后经过线性层得到输出，通常是一个标量
-        x = self.fc3(x)
+        x = self.fc2(x) 
         return x

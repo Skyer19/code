@@ -82,16 +82,16 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=1,
+    epochs=15,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
-    lr=0.001,
-    batch_size=32,
-    layer_size=128, # 128
-    nlayers=8,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder。4
-    nhead=4,  # number of heads in nn.MultiheadAttention
+    lr=0.002,
+    batch_size=128,
+    layer_size=512, # 128
+    nlayers=8,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    nhead=8,  # number of heads in nn.MultiheadAttention
     dropout=0.0,  # dropout probability
     schedule_ratio=0.9,  # ratio of epochs for learning rate schedule
     save_eval_interval=5,
@@ -189,14 +189,15 @@ do_eval_scib_metrics = True
 assert input_style in ["normed_raw", "log1p", "binned"]
 assert output_style in ["normed_raw", "log1p", "binned"]
 assert input_emb_style in ["category", "continuous", "scaling"]
-if input_style == "binned":
-    if input_emb_style == "scaling":
-        raise ValueError("input_emb_style `scaling` is not supported for binned input.")
-elif input_style == "log1p" or input_style == "normed_raw":
-    if input_emb_style == "category":
-        raise ValueError(
-            "input_emb_style `category` is not supported for log1p or normed_raw input."
-        )
+
+# if input_style == "binned":
+#     if input_emb_style == "scaling":
+#         raise ValueError("input_emb_style `scaling` is not supported for binned input.")
+# elif input_style == "log1p" or input_style == "normed_raw":
+#     if input_emb_style == "category":
+#         raise ValueError(
+#             "input_emb_style `category` is not supported for log1p or normed_raw input."
+#         )
 
 if input_emb_style == "category":
     mask_value = n_bins + 1
@@ -207,9 +208,9 @@ else:
     pad_value = -2
     n_input_bins = n_bins
 
-if ADV and DAB:
-    raise ValueError("ADV and DAB cannot be both True.")
-DAB_separate_optim = True if DAB > 1 else False
+# if ADV and DAB:
+#     raise ValueError("ADV and DAB cannot be both True.")
+# DAB_separate_optim = True if DAB > 1 else False
 
 
 ######################################################################
@@ -228,6 +229,9 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 ######################################################################
 adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train.h5ad")
 adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test.h5ad")
+
+print(adata.shape)
+print(adata_test.shape)
 
 adata.obs["batch_id"]  = adata.obs["str_batch"] = "0"
 adata_test.obs["batch_id"]  = adata_test.obs["str_batch"] = "1" 
@@ -310,8 +314,8 @@ preprocessor = Preprocessor(
     result_log1p_key="X_log1p",
     subset_hvg=False,  # 5. whether to subset the raw data to highly variable genes
     hvg_flavor="seurat_v3" if data_is_raw else "cell_ranger",
-    binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
-    result_binned_key="X_binned",  # the key in adata.layers to store the binned data
+    # binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
+    # result_binned_key="X_binned",  # the key in adata.layers to store the binned data
 )
 
 
@@ -329,9 +333,9 @@ input_layer_key = {  # the values of this map coorespond to the keys in preproce
     "normed_raw": "X_normed",
     "log1p": "X_normed",
     "binned": "X_binned",
-    # "binned": "X_normed",
 }[input_style]
 
+print("input_layer_key: ", input_layer_key)
 
 all_counts = (
     adata.layers[input_layer_key].A
@@ -510,8 +514,9 @@ if config.load_model is not None:
             for k, v in pretrained_dict.items()
             if k in model_dict and v.shape == model_dict[k].shape
         }
-        for k, v in pretrained_dict.items():
-            logger.info(f"Loading params {k} with shape {v.shape}")
+        # for k, v in pretrained_dict.items():
+            # logger.info(f"Loading params {k} with shape {v.shape}")
+        
         model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict)
 
@@ -520,10 +525,10 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 # Freeze all pre-decoder weights
 for name, para in model.named_parameters():
     # print("-"*20)
-    # print(f"name: {name}")
+    print(f"name: {name}")
     if config.freeze and "encoder" in name and "transformer_encoder" not in name:
     # if config.freeze and "encoder" in name:
-        # print(f"freezing weights for: {name}")
+        print(f"freezing weights for: {name}")
         para.requires_grad = False
 
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
@@ -550,10 +555,37 @@ wandb.watch(model)
 # from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 criterion_cls = nn.MSELoss()
-# criterion_cls = NonNegativeMSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-# scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1)
-# scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0)
+# criterion_cls = nn.SmoothL1Loss()
+optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
+
+######################################################################
+# 定义评估指标函数
+######################################################################
+# def mean_absolute_error(y_true, y_pred):
+#     return torch.mean(torch.abs(y_true - y_pred)).item()
+
+# def mean_squared_error(y_true, y_pred):
+#     return torch.mean((y_true - y_pred) ** 2).item()
+
+# def root_mean_squared_error(y_true, y_pred):
+#     return torch.sqrt(torch.mean((y_true - y_pred) ** 2)).item()
+
+# def r_squared(y_true, y_pred):
+#     y_mean = torch.mean(y_true)
+#     total_variance = torch.sum((y_true - y_mean) ** 2)
+#     residual_variance = torch.sum((y_true - y_pred) ** 2)
+    
+#     if total_variance == 0:
+#         return 0.0  # 当 total_variance 为零时，直接返回 0.0
+    
+#     return 1 - (residual_variance / total_variance).item()
+
+
+# def mean_absolute_percentage_error(y_true, y_pred):
+#     return torch.mean(torch.abs((y_true - y_pred) / y_true)).item() * 100
+
 
 ######################################################################
 # Train the model
@@ -566,6 +598,9 @@ def train(model: nn.Module, loader: DataLoader) -> None:
 
     total_loss = 0
     total_num = 0
+
+    all_preds = []
+    all_targets = []
     
     start_time = time.time()
 
@@ -610,13 +645,13 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 
             # loss = criterion_cls(apply_sigmoid(output_dict["cls_output"]), age)
             output_values = output_dict["reg_output"]
+            output_values = output_values.squeeze()
+            
             loss = criterion_cls(output_values, age)
 
-            # print("output : ",output_values)
-            # print("ground : ",age)
+            # print("output : ",output_values.size())
+            # print("ground : ",age.size())
             
-            # print("output after apply_sigmoid: ",apply_sigmoid(output_dict["cls_output"]))
-
                   
             # print("train total_loss: ",loss)
            
@@ -629,47 +664,64 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         # total_loss += loss.item()
         total_loss += loss.item() * len(input_gene_ids)
         total_num += len(input_gene_ids)
+
+        # 保存预测值和真实值以计算其他评估指标
+        all_preds.append(output_values.cpu())
+        all_targets.append(age.cpu())
         
      
-
-        if batch % log_interval == 0 and batch > 0:
+        # if batch % log_interval == 0 and batch > 0:
                         
-            ms_per_batch = (time.time() - start_time) * 1000 / log_interval
-            cur_loss = total_loss / log_interval
- 
-            logger.info(
-                f"| epoch {epoch:3d} | {batch:3d}/{num_batches:3d} batches | "
-                f"lr {optimizer.param_groups[0]['lr']:05.4f} | ms/batch {ms_per_batch:5.4f} | "
-                f"loss {cur_loss:5.2f} | ")
+        #     ms_per_batch = (time.time() - start_time) * 1000 / log_interval
+        #     cur_loss = total_loss / total_num  # 计算从上次日志记录以来的平均损失
+
+        #     logger.info(
+        #         f"| epoch {epoch:3d} | {batch:3d}/{num_batches:3d} batches | "
+        #         f"lr {optimizer.param_groups[0]['lr']:05.4f} | ms/batch {ms_per_batch:5.4f} | "
+        #         f"loss {cur_loss:5.2f} | ")
             
-            start_time = time.time()
-    epoch_loss = total_loss / total_num
-    # logger.info(f"Epoch {epoch}/{epochs}, Epoch Loss: {epoch_loss:.4f}")
-    print(f"Epoch {epoch}/{epochs}, Epoch Loss: {epoch_loss:.4f}")   
+        #     # 重置 start_time 和 total_loss，以便在下一个 log_interval 内继续计算
+        #     start_time = time.time()
+        #     total_loss = 0  # 重置 total_loss
+        #     total_num = 0  # 重置 total_num
+
+    epoch_loss = total_loss / total_num  # 计算整个epoch的平均损失
+
+    # 将所有批次的预测值和真实值连接起来
+    all_preds = torch.cat(all_preds)
+    all_targets = torch.cat(all_targets)
+    
+
+    # 计算 MSE
+    mse = torch.mean((all_preds - all_targets) ** 2)
+
+    # 计算 MAE
+    mae = torch.mean(torch.abs(all_preds - all_targets))
+
+    # 计算 RMSE
+    rmse = torch.sqrt(mse)
+
+    # 计算 R2
+    ss_res = torch.sum((all_targets - all_preds) ** 2)
+    ss_tot = torch.sum((all_targets - torch.mean(all_targets)) ** 2)
+    r2 = 1 - ss_res / ss_tot
+
+    # 计算 MAPE
+    mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100
+    
+    print("\n")
+    logger.info("-" * 89)
+    logger.info(f"Epoch {epoch}/{epochs}")
+    # print(f"Epoch {epoch}/{epochs}, Epoch Loss: {epoch_loss:.4f}")   
+
+    logger.info(
+    f"| training | loss {epoch_loss:5.4f} | mse {mse:5.4f} | " 
+    f" mae {mae:5.4f} | rmse {rmse:5.4f} | " 
+    f" r2 {r2:5.4f} | mape {mape:5.4f}")
+    # logger.info("-" * 89)
+
     metrics_to_log.update({"train/loss": epoch_loss})
     wandb.log(metrics_to_log)
-
-
-######################################################################
-# 定义评估指标函数
-######################################################################
-def mean_absolute_error(y_true, y_pred):
-    return torch.mean(torch.abs(y_true - y_pred)).item()
-
-def mean_squared_error(y_true, y_pred):
-    return torch.mean((y_true - y_pred) ** 2).item()
-
-def root_mean_squared_error(y_true, y_pred):
-    return torch.sqrt(torch.mean((y_true - y_pred) ** 2)).item()
-
-def r_squared(y_true, y_pred):
-    y_mean = torch.mean(y_true)
-    total_variance = torch.sum((y_true - y_mean) ** 2)
-    residual_variance = torch.sum((y_true - y_pred) ** 2)
-    return 1 - (residual_variance / total_variance).item()
-
-def mean_absolute_percentage_error(y_true, y_pred):
-    return torch.mean(torch.abs((y_true - y_pred) / y_true)).item() * 100
 
 ######################################################################
 # Evaluate the model
@@ -708,6 +760,11 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
                 )
                 
                 output_values = output_dict["reg_output"]
+                output_values = output_values.squeeze()
+
+                # print("output : ",output_values.size())
+                # print("ground : ",age.size())
+
                 loss = criterion_cls(output_values, age)
 
                 # print("evaluate loss: ",loss)
@@ -722,29 +779,57 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
 
     # 将所有批次的预测值和真实值连接起来
     all_preds = torch.cat(all_preds)
-
-    # print('all_preds :', all_preds)
     all_targets = torch.cat(all_targets)
+    
+    with open("all_preds.txt", "w") as file:
+        file.write(str(all_preds))
+        
+    with open("all_targets.txt", "w") as file:
+        file.write(str(all_targets))
+    
+    # print('all_preds :', all_preds)
     # print('all_targets :', all_targets)
     
-    # 计算其他评估指标
-    total_mae = mean_absolute_error(all_targets, all_preds)
-    total_rmse = root_mean_squared_error(all_targets, all_preds)
-    total_r2 = r_squared(all_targets, all_preds)
-    total_mape = mean_absolute_percentage_error(all_targets, all_preds)
 
-    wandb.log(
-        {
-            "valid/mse": total_loss / total_num,
-            "valid/mae": total_mae,
-            "valid/rmse": total_rmse,
-            "valid/r2": total_r2,
-            "valid/mape": total_mape,
-            "epoch": epoch,
-        },
-    )
+
+    # 计算 MSE
+    mse = torch.mean((all_preds - all_targets) ** 2)
+
+    # 计算 MAE
+    mae = torch.mean(torch.abs(all_preds - all_targets))
+
+    # 计算 RMSE
+    rmse = torch.sqrt(mse)
+
+    # 计算 R2
+    ss_res = torch.sum((all_targets - all_preds) ** 2)
+    ss_tot = torch.sum((all_targets - torch.mean(all_targets)) ** 2)
+    r2 = 1 - ss_res / ss_tot
+
+    # 计算 MAPE
+    mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100
+
+    return total_loss / total_num, mse, mae, rmse, r2, mape
+
+
+    # # 计算其他评估指标
+    # total_mae = mean_absolute_error(all_targets, all_preds)
+    # total_rmse = root_mean_squared_error(all_targets, all_preds)
+    # total_r2 = r_squared(all_targets, all_preds)
+    # total_mape = mean_absolute_percentage_error(all_targets, all_preds)
+
+    # wandb.log(
+    #     {
+    #         "valid/mse": total_loss / total_num,
+    #         "valid/mae": total_mae,
+    #         "valid/rmse": total_rmse,
+    #         "valid/r2": total_r2,
+    #         "valid/mape": total_mape,
+    #         "epoch": epoch,
+    #     },
+    # )
     
-    return total_loss / total_num, total_mae, total_rmse, total_r2, total_mape
+    # return total_loss / total_num, total_mae, total_rmse, total_r2, total_mape
 
 
     # wandb.log(
@@ -769,7 +854,7 @@ best_model = None
 logger.info("Apply the model on the age of the prediction \n")
 
 for epoch in range(1, epochs + 1):
-    epoch_start_time = time.time()
+    # epoch_start_time = time.time()
     train_data_pt, valid_data_pt = prepare_data(sort_seq_batch=per_seq_batch_sample)
 
     train_loader = prepare_dataloader(
@@ -793,21 +878,21 @@ for epoch in range(1, epochs + 1):
         train(model,loader=train_loader,)
 
 
-    val_loss, total_mae, total_rmse, total_r2, total_mape = evaluate(model,loader=valid_loader)
+    val_loss, mse, total_mae, total_rmse, total_r2, total_mape = evaluate(model,loader=valid_loader)
     
     # scheduler.step(val_loss)  # 更新学习率调度器
 
     
-    elapsed = time.time() - epoch_start_time
+    # elapsed = time.time() - epoch_start_time
     
-    logger.info("-" * 89)
+    # logger.info("-" * 89)
     logger.info(
-    f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | mse {val_loss:5.4f} | " 
+    f"| validation  | loss {val_loss:5.4f} | mse {mse:5.4f} | " 
     f" mae {total_mae:5.4f} | rmse {total_rmse:5.4f} | " 
     f" r2 {total_r2:5.4f} | mape {total_mape:5.4f}")
     logger.info("-" * 89)
 
-    # scheduler.step()
+    scheduler.step(val_loss)
 
 
     if val_loss < best_val_loss:
