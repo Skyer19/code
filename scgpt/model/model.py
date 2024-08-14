@@ -157,28 +157,28 @@ class TransformerModel(nn.Module):
             use_batch_labels=use_batch_labels,
         )
         self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
-        if do_mvc:
-            self.mvc_decoder = MVCDecoder(
-                d_model,
-                arch_style=mvc_decoder_style,
-                explicit_zero_prob=explicit_zero_prob,
-                use_batch_labels=use_batch_labels,
-            )
+        # if do_mvc:
+        #     self.mvc_decoder = MVCDecoder(
+        #         d_model,
+        #         arch_style=mvc_decoder_style,
+        #         explicit_zero_prob=explicit_zero_prob,
+        #         use_batch_labels=use_batch_labels,
+        #     )
 
-        if do_dab:
-            self.grad_reverse_discriminator = AdversarialDiscriminator(
-                d_model,
-                n_cls=num_batch_labels,
-                reverse_grad=True,
-            )
+        # if do_dab:
+        #     self.grad_reverse_discriminator = AdversarialDiscriminator(
+        #         d_model,
+        #         n_cls=num_batch_labels,
+        #         reverse_grad=True,
+        #     )
 
-        self.sim = Similarity(temp=0.5)  # TODO: auto set temp
+        # self.sim = Similarity(temp=0.5)  # TODO: auto set temp
         # self.creterion_cce = nn.CrossEntropyLoss()
 
         # self.continous_decoder = ContinuousValueDeoder(d_model, nlayers)
         
         self.linear = nn.Linear(d_model, d_model) 
-        self.reg_decoder = RegressionEncoder(d_model, dropout)
+        self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
 
         self.init_weights()
 
@@ -219,12 +219,14 @@ class TransformerModel(nn.Module):
 
         # print("total_embs: ",total_embs.size())    # (batch, seq_len, d_model)    
 
-        if getattr(self, "dsbn", None) is not None:
+        if getattr(self, "dsbn", None) is not None:                                     # Domain-Specific Batch Normalization, DSBN
+            print(22222)
             batch_label = int(batch_labels[0].item())
             total_embs = self.dsbn(total_embs.permute(0, 2, 1), batch_label).permute(
                 0, 2, 1
             )  # the batch norm always works on dim 1
-        elif getattr(self, "bn", None) is not None:
+        elif getattr(self, "bn", None) is not None:                                      # Batch Normalization
+            print(11111)
             total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
 
         # total_embs: (batch, seq_len, d_model)   

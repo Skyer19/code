@@ -69,7 +69,7 @@ from scgpt.utils import set_seed, category_str2int, eval_scib_metrics
 sc.set_figure_params(figsize=(6, 6))
 
 os.environ["KMP_WARNINGS"] = "off"
-# os.environ["WANDB_MODE"]= "offline"
+os.environ["WANDB_MODE"]= "offline"
 
 warnings.filterwarnings('ignore')
 
@@ -82,13 +82,13 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=5,
+    epochs=1,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
     lr=0.001,
-    batch_size=128,
+    batch_size=32,
     layer_size=128, # 128
     nlayers=8,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder。4
     nhead=4,  # number of heads in nn.MultiheadAttention
@@ -128,8 +128,8 @@ max_seq_len = 3001
 n_bins = config.n_bins
 
 # input/output representation
-input_style = "binned"  # "normed_raw", "log1p", or "binned"
-output_style = "binned"  # "normed_raw", "log1p", or "binned"
+input_style = "normed_raw"  # "normed_raw", "log1p", or "binned"                                    # decide the type of the input
+output_style = "normed_raw"  # "normed_raw", "log1p", or "binned"
 
 ######################################################################
 # Settings for training
@@ -142,7 +142,7 @@ MVC = config.MVC  # Masked value prediction for cell embedding
 ECS = config.ecs_thres > 0  # Elastic cell similarity objective
 DAB = False  # Domain adaptation by reverse backpropagation, set to 2 for separate optimizer
 INPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
-input_emb_style = "continuous"  # "category" or "continuous" or "scaling"
+input_emb_style = "scaling"  # "category" or "continuous" or "scaling"
 cell_emb_style = "avg-pool"  # "avg-pool" or "w-pool" or "cls"
 adv_E_delay_epochs = 0  # delay adversarial training on encoder for a few epochs
 adv_D_delay_epochs = 0
@@ -310,8 +310,8 @@ preprocessor = Preprocessor(
     result_log1p_key="X_log1p",
     subset_hvg=False,  # 5. whether to subset the raw data to highly variable genes
     hvg_flavor="seurat_v3" if data_is_raw else "cell_ranger",
-    # binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
-    # result_binned_key="X_binned",  # the key in adata.layers to store the binned data
+    binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
+    result_binned_key="X_binned",  # the key in adata.layers to store the binned data
 )
 
 
@@ -328,9 +328,11 @@ preprocessor(adata_test, batch_key=None)
 input_layer_key = {  # the values of this map coorespond to the keys in preprocessing
     "normed_raw": "X_normed",
     "log1p": "X_normed",
-    # "binned": "X_binned",
-    "binned": "X_normed",
+    "binned": "X_binned",
+    # "binned": "X_normed",
 }[input_style]
+
+
 all_counts = (
     adata.layers[input_layer_key].A
     if issparse(adata.layers[input_layer_key])
