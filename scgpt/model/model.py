@@ -226,8 +226,10 @@ class TransformerModel(nn.Module):
         # else:
         #     total_embs = src + values       # 将基因嵌入表示和连续值的嵌入表示结合在一起
 
-        values = values.unsqueeze(2)
-        total_embs = src * values
+        # values = values.unsqueeze(2)
+        # total_embs = src * values
+
+        total_embs = src + values
 
         # print("total_embs: ",total_embs.size())    # (batch, seq_len, d_model)    
 

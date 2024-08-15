@@ -69,7 +69,7 @@ from scgpt.utils import set_seed, category_str2int, eval_scib_metrics
 sc.set_figure_params(figsize=(6, 6))
 
 os.environ["KMP_WARNINGS"] = "off"
-os.environ["WANDB_MODE"]= "offline"
+# os.environ["WANDB_MODE"]= "offline"
 
 warnings.filterwarnings('ignore')
 
@@ -82,16 +82,18 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=15,
+    epochs=30,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
     lr=0.002,
-    batch_size=128,
-    layer_size=512, # 128
-    nlayers=8,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    
+    batch_size=64,
+    layer_size=128, # 128
+    nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
+    
     dropout=0.0,  # dropout probability
     schedule_ratio=0.9,  # ratio of epochs for learning rate schedule
     save_eval_interval=5,
@@ -142,8 +144,8 @@ MVC = config.MVC  # Masked value prediction for cell embedding
 ECS = config.ecs_thres > 0  # Elastic cell similarity objective
 DAB = False  # Domain adaptation by reverse backpropagation, set to 2 for separate optimizer
 INPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
-input_emb_style = "scaling"  # "category" or "continuous" or "scaling"
-cell_emb_style = "avg-pool"  # "avg-pool" or "w-pool" or "cls"
+input_emb_style = "category"  # "category" or "continuous" or "scaling"
+cell_emb_style = "w-pool"  # "avg-pool" or "w-pool" or "cls"
 adv_E_delay_epochs = 0  # delay adversarial training on encoder for a few epochs
 adv_D_delay_epochs = 0
 mvc_decoder_style = "inner product"
@@ -165,6 +167,7 @@ eval_batch_size = config.batch_size
 epochs = config.epochs
 schedule_interval = 1
 
+early_stop = 10
 
 ######################################################################
 # Settings for the model
@@ -526,8 +529,8 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 for name, para in model.named_parameters():
     # print("-"*20)
     print(f"name: {name}")
-    if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-    # if config.freeze and "encoder" in name:
+    # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
+    if config.freeze and "encoder" in name:
         print(f"freezing weights for: {name}")
         para.requires_grad = False
 
@@ -556,10 +559,12 @@ wandb.watch(model)
 
 criterion_cls = nn.MSELoss()
 # criterion_cls = nn.SmoothL1Loss()
-optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+# optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
+# scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
-
+optimizer = torch.optim.Adam(model.parameters(), lr=lr, eps=1e-4 if config.amp else 1e-8)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=config.schedule_ratio)
+scaler = torch.cuda.amp.GradScaler(enabled=config.amp)
 ######################################################################
 # 定义评估指标函数
 ######################################################################
@@ -657,8 +662,27 @@ def train(model: nn.Module, loader: DataLoader) -> None:
            
             # metrics_to_log.update({"train/cls": loss.item()})
 
-        loss.backward()
-        optimizer.step()
+        # loss.backward()
+        # optimizer.step()
+        
+        model.zero_grad()
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.filterwarnings("always")
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(),
+                1.0,
+                error_if_nonfinite=False if scaler.is_enabled() else True,
+            )
+            if len(w) > 0:
+                logger.warning(
+                    f"Found infinite gradient. This may be caused by the gradient "
+                    f"scaler. The current scale is {scaler.get_scale()}. This warning "
+                    "can be ignored if no longer occurs after autoscaling of the scaler."
+                )
+        scaler.step(optimizer)
+        scaler.update()
         
         # wandb.log(metrics_to_log)
         # total_loss += loss.item()
@@ -809,6 +833,18 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     # 计算 MAPE
     mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100
 
+    wandb.log(
+        {
+            "valid/loss": total_loss / total_num,
+            "valid/mse": mse,
+            "valid/mae": mae,
+            "valid/rmse": rmse,
+            "valid/r2": r2,
+            "valid/mape": mape,
+            "epoch": epoch,
+        },
+    )
+
     return total_loss / total_num, mse, mae, rmse, r2, mape
 
 
@@ -818,16 +854,7 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     # total_r2 = r_squared(all_targets, all_preds)
     # total_mape = mean_absolute_percentage_error(all_targets, all_preds)
 
-    # wandb.log(
-    #     {
-    #         "valid/mse": total_loss / total_num,
-    #         "valid/mae": total_mae,
-    #         "valid/rmse": total_rmse,
-    #         "valid/r2": total_r2,
-    #         "valid/mape": total_mape,
-    #         "epoch": epoch,
-    #     },
-    # )
+
     
     # return total_loss / total_num, total_mae, total_rmse, total_r2, total_mape
 
@@ -849,7 +876,7 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
 
 best_val_loss = float("inf")
 best_model = None
-
+patience = 0
 
 logger.info("Apply the model on the age of the prediction \n")
 
@@ -892,15 +919,21 @@ for epoch in range(1, epochs + 1):
     f" r2 {total_r2:5.4f} | mape {total_mape:5.4f}")
     logger.info("-" * 89)
 
-    scheduler.step(val_loss)
-
+    # scheduler.step(val_loss)
+    scheduler.step()
 
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         best_model = copy.deepcopy(model)
         best_model_epoch = epoch
         logger.info(f"Best model with score {best_val_loss:5.4f}")
-    
+        patience = 0
+    else:
+        patience += 1
+        if patience >= early_stop:
+            logger.info(f"Early stop at epoch {epoch}")
+            break
+
 
 # save the model into the save_dir
 torch.save(best_model.state_dict(), save_dir / "model.pt")
