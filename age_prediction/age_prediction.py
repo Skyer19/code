@@ -82,15 +82,15 @@ hyperparameter_defaults = dict(
     do_train=True,
     load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
     mask_ratio=0.0,
-    epochs=30,
+    epochs=50,
     n_bins=51,
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
-    lr=0.002,
+    lr=1e-4,
     
     batch_size=64,
-    layer_size=128, # 128
+    layer_size=512, # 128
     nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
     
@@ -130,8 +130,8 @@ max_seq_len = 3001
 n_bins = config.n_bins
 
 # input/output representation
-input_style = "normed_raw"  # "normed_raw", "log1p", or "binned"                                    # decide the type of the input
-output_style = "normed_raw"  # "normed_raw", "log1p", or "binned"
+input_style = "binned"  # "normed_raw", "log1p", or "binned"                                    # decide the type of the input
+# output_style = "normed_raw"  # "normed_raw", "log1p", or "binned"
 
 ######################################################################
 # Settings for training
@@ -190,7 +190,7 @@ do_eval_scib_metrics = True
 
 # %% validate settings
 assert input_style in ["normed_raw", "log1p", "binned"]
-assert output_style in ["normed_raw", "log1p", "binned"]
+# assert output_style in ["normed_raw", "log1p", "binned"]
 assert input_emb_style in ["category", "continuous", "scaling"]
 
 # if input_style == "binned":
@@ -303,6 +303,13 @@ if config.load_model is not None:
     nlayers = model_configs["nlayers"]
     n_layers_cls = model_configs["n_layers_cls"]
 
+    print("\n**** parameters from the pre-trained model ****")
+    print(f'layer_size = embsize: {model_configs["embsize"]} = d_hid: {model_configs["d_hid"]}, n_layers: {model_configs["nlayers"]}, nhead: {model_configs["nheads"]}')
+    print("**** parameters from the pre-trained model ****\n")
+
+    print("**** actual model parameters ****")
+    print(f'layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
+    print("**** actual model parameters ****\n")
 
 ######################################################################
 # set up the preprocessor, use the args to config the workflow
@@ -317,8 +324,8 @@ preprocessor = Preprocessor(
     result_log1p_key="X_log1p",
     subset_hvg=False,  # 5. whether to subset the raw data to highly variable genes
     hvg_flavor="seurat_v3" if data_is_raw else "cell_ranger",
-    # binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
-    # result_binned_key="X_binned",  # the key in adata.layers to store the binned data
+    binning=n_bins,  # 6. whether to bin the raw data and to what number of bins
+    result_binned_key="X_binned",  # the key in adata.layers to store the binned data
 )
 
 
@@ -345,6 +352,8 @@ all_counts = (
     if issparse(adata.layers[input_layer_key])
     else adata.layers[input_layer_key]
 )
+
+
 genes = adata.var["gene_name"].tolist()
 
 age = adata.obs["age"].tolist()
@@ -528,10 +537,10 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 # Freeze all pre-decoder weights
 for name, para in model.named_parameters():
     # print("-"*20)
-    print(f"name: {name}")
+    # print(f"name: {name}")
     # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
     if config.freeze and "encoder" in name:
-        print(f"freezing weights for: {name}")
+        # print(f"freezing weights for: {name}")
         para.requires_grad = False
 
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
@@ -557,39 +566,18 @@ wandb.watch(model)
 ######################################################################
 # from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-criterion_cls = nn.MSELoss()
-# criterion_cls = nn.SmoothL1Loss()
+# criterion_cls = nn.MSELoss()
+criterion_cls = nn.SmoothL1Loss()
 # optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=lr, eps=1e-4 if config.amp else 1e-8)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=config.schedule_ratio)
-scaler = torch.cuda.amp.GradScaler(enabled=config.amp)
-######################################################################
-# 定义评估指标函数
-######################################################################
-# def mean_absolute_error(y_true, y_pred):
-#     return torch.mean(torch.abs(y_true - y_pred)).item()
+# optimizer = torch.optim.Adam(model.parameters(), lr=lr, eps=1e-4)
+# scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+# scaler = torch.cuda.amp.GradScaler(enabled=True)
 
-# def mean_squared_error(y_true, y_pred):
-#     return torch.mean((y_true - y_pred) ** 2).item()
-
-# def root_mean_squared_error(y_true, y_pred):
-#     return torch.sqrt(torch.mean((y_true - y_pred) ** 2)).item()
-
-# def r_squared(y_true, y_pred):
-#     y_mean = torch.mean(y_true)
-#     total_variance = torch.sum((y_true - y_mean) ** 2)
-#     residual_variance = torch.sum((y_true - y_pred) ** 2)
-    
-#     if total_variance == 0:
-#         return 0.0  # 当 total_variance 为零时，直接返回 0.0
-    
-#     return 1 - (residual_variance / total_variance).item()
-
-
-# def mean_absolute_percentage_error(y_true, y_pred):
-#     return torch.mean(torch.abs((y_true - y_pred) / y_true)).item() * 100
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, eps=1e-8)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+scaler = torch.cuda.amp.GradScaler(enabled=True)
 
 
 ######################################################################
@@ -665,24 +653,27 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         # loss.backward()
         # optimizer.step()
         
-        model.zero_grad()
+        # model.zero_grad()
+        # scaler.scale(loss).backward()
+        # scaler.unscale_(optimizer)
         scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.filterwarnings("always")
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                1.0,
-                error_if_nonfinite=False if scaler.is_enabled() else True,
-            )
-            if len(w) > 0:
-                logger.warning(
-                    f"Found infinite gradient. This may be caused by the gradient "
-                    f"scaler. The current scale is {scaler.get_scale()}. This warning "
-                    "can be ignored if no longer occurs after autoscaling of the scaler."
-                )
         scaler.step(optimizer)
         scaler.update()
+        # with warnings.catch_warnings(record=True) as w:
+        #     warnings.filterwarnings("always")
+        #     torch.nn.utils.clip_grad_norm_(
+        #         model.parameters(),
+        #         1.0,
+        #         error_if_nonfinite=False if scaler.is_enabled() else True,
+        #     )
+        #     if len(w) > 0:
+        #         logger.warning(
+        #             f"Found infinite gradient. This may be caused by the gradient "
+        #             f"scaler. The current scale is {scaler.get_scale()}. This warning "
+        #             "can be ignored if no longer occurs after autoscaling of the scaler."
+        #         )
+        # scaler.step(optimizer)
+        # scaler.update()
         
         # wandb.log(metrics_to_log)
         # total_loss += loss.item()
@@ -715,7 +706,8 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     all_preds = torch.cat(all_preds)
     all_targets = torch.cat(all_targets)
     
-
+    
+    # 定义评估指标函数
     # 计算 MSE
     mse = torch.mean((all_preds - all_targets) ** 2)
 
@@ -815,7 +807,7 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     # print('all_targets :', all_targets)
     
 
-
+    # 定义评估指标函数
     # 计算 MSE
     mse = torch.mean((all_preds - all_targets) ** 2)
 
@@ -833,17 +825,22 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     # 计算 MAPE
     mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100
 
+    val_loss = total_loss / total_num
+
     wandb.log(
         {
-            "valid/loss": total_loss / total_num,
+            "valid/loss": val_loss,
             "valid/mse": mse,
             "valid/mae": mae,
             "valid/rmse": rmse,
             "valid/r2": r2,
             "valid/mape": mape,
+            "valid/r2/mae": r2/mae,
             "epoch": epoch,
         },
     )
+
+    scheduler.step(val_loss)
 
     return total_loss / total_num, mse, mae, rmse, r2, mape
 
@@ -920,19 +917,18 @@ for epoch in range(1, epochs + 1):
     logger.info("-" * 89)
 
     # scheduler.step(val_loss)
-    scheduler.step()
 
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         best_model = copy.deepcopy(model)
         best_model_epoch = epoch
         logger.info(f"Best model with score {best_val_loss:5.4f}")
-        patience = 0
-    else:
-        patience += 1
-        if patience >= early_stop:
-            logger.info(f"Early stop at epoch {epoch}")
-            break
+        # patience = 0
+    # else:
+    #     patience += 1
+    #     if patience >= early_stop:
+    #         logger.info(f"Early stop at epoch {epoch}")
+    #         break
 
 
 # save the model into the save_dir

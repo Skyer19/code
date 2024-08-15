@@ -1180,18 +1180,50 @@ class ContinuousValueDeoder(nn.Module):
 #         output = self.fc(x)  # Pooling the sequence output to a single vector
 #         return output.squeeze(-1)
     
+# class RegressionEncoder(nn.Module):
+#     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.1):
+#         super(RegressionEncoder, self).__init__()
+#         # 增加模型复杂性：增加更多隐藏层和神经元
+#         self.fc1 = nn.Linear(d_model, d_model)
+#         self.act1 = nn.ReLU()
+#         self.fc2 = nn.Linear(d_model, d_model // 2)
+#         # self.act2 = nn.ReLU()
+#         # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
+#         self.fc4 = nn.Linear(d_model // 2, output_dim)
+
+#     def forward(self, x):
+#         x = self.fc1(x)
+#         x = self.act1(x)
+#         x = self.fc2(x)
+#         x = self.fc4(x)
+#         return x
+
 class RegressionEncoder(nn.Module):
     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.3):
         super(RegressionEncoder, self).__init__()
-        # 定义第一层线性变换
-        self.fc1 = nn.Linear(d_model, d_model // 2)
-        self.activation = nn.ReLU()
+        self.fc1 = nn.Linear(d_model, d_model)
+        self.bn1 = nn.BatchNorm1d(d_model)
+        self.activation1 = nn.LeakyReLU()
+        
+        self.fc2 = nn.Linear(d_model, d_model // 2)
+        self.bn2 = nn.BatchNorm1d(d_model // 2)
+        self.activation2 = nn.LeakyReLU()
+        
+        self.fc3 = nn.Linear(d_model // 2, d_model // 4)
+        self.bn3 = nn.BatchNorm1d(d_model // 4)
+        self.activation3 = nn.LeakyReLU()
+        
+        self.fc4 = nn.Linear(d_model // 4, output_dim)
+        
         self.dropout = nn.Dropout(dropout)
-        self.fc2 = nn.Linear(d_model // 2, output_dim)
 
     def forward(self, x):
-
-        x = self.activation(self.fc1(x))
+        x = self.activation1(self.bn1(self.fc1(x)))
         x = self.dropout(x)
-        x = self.fc2(x) 
+        
+        x = self.activation2(self.bn2(self.fc2(x)))
+        x = self.dropout(x)
+        
+        x = self.activation3(self.bn3(self.fc3(x)))
+        x = self.fc4(x)
         return x
