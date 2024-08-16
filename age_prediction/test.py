@@ -111,7 +111,8 @@ CCE = False  # Contrastive cell embedding objective
 MVC = False  # Masked value prediction for cell embedding
 ECS = False  # Elastic cell similarity objective
 DAB = False  # Domain adaptation by reverse backpropagation, set to 2 for separate optimizer
-INPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
+I
+NPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
 input_emb_style = "category"  # "category" or "continuous" or "scaling"
 cell_emb_style = "w-pool"  # "avg-pool" or "w-pool" or "cls"
 adv_E_delay_epochs = 0  # delay adversarial training on encoder for a few epochs
@@ -349,36 +350,12 @@ model = TransformerModel(
     fast_transformer_backend=fast_transformer_backend,
     pre_norm=config.pre_norm,
 )
-if config.load_model is not None:
-    try:
-        model.load_state_dict(torch.load(model_file))
-        print(f"Loading all model params from {model_file}")
-    except:
-        # only load params that are in the model and match the size
-        model_dict = model.state_dict()
-        pretrained_dict = torch.load(model_file)
-        pretrained_dict = {
-            k: v
-            for k, v in pretrained_dict.items()
-            if k in model_dict and v.shape == model_dict[k].shape
-        }
-        # for k, v in pretrained_dict.items():
-            # logger.info(f"Loading params {k} with shape {v.shape}")
-        
-        model_dict.update(pretrained_dict)
-        model.load_state_dict(model_dict)
+
+model.load_state_dict(torch.load(model_file))
+print(f"Loading all model params from {model_file}")
+ 
 
 pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
-
-# Freeze all pre-decoder weights
-for name, para in model.named_parameters():
-    # print("-"*20)
-    # print(f"name: {name}")
-    # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-    if config.freeze and "encoder" in name:
-        # print(f"freezing weights for: {name}")
-        para.requires_grad = False
-
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
 
 print(f"Total Pre freeze Params {(pre_freeze_param_count )}")

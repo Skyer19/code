@@ -69,7 +69,7 @@ from scgpt.utils import set_seed, category_str2int, eval_scib_metrics
 sc.set_figure_params(figsize=(6, 6))
 
 os.environ["KMP_WARNINGS"] = "off"
-# os.environ["WANDB_MODE"]= "offline"
+os.environ["WANDB_MODE"]= "offline"
 
 warnings.filterwarnings('ignore')
 
@@ -90,7 +90,7 @@ hyperparameter_defaults = dict(
     lr=0.0005,
 
     batch_size=64,
-    layer_size=512, # 128
+    layer_size=128, # 128
     nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
     
@@ -230,8 +230,8 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 ######################################################################
 # Data loading
 ######################################################################
-adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train.h5ad")
-adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test.h5ad")
+adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train_new.h5ad")
+adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test_new.h5ad")
 
 print(adata.shape)
 print(adata_test.shape)
@@ -501,7 +501,7 @@ model = TransformerModel(
     do_mvc=MVC,
     do_dab=DAB,
     use_batch_labels=INPUT_BATCH_LABELS,
-    num_batch_labels=num_batch_types,
+    num_batch_labels=None,
     domain_spec_batchnorm=config.DSBN,
     input_emb_style=input_emb_style,
     n_input_bins=n_input_bins,
@@ -537,10 +537,10 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 # Freeze all pre-decoder weights
 for name, para in model.named_parameters():
     # print("-"*20)
-    # print(f"name: {name}")
-    # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-    if config.freeze and "encoder" in name:
-        # print(f"freezing weights for: {name}")
+    print(f"name: {name}")
+    if config.freeze and "encoder" in name and "transformer_encoder" not in name:
+    # if config.freeze and "encoder" in name:
+        print(f"freezing weights for: {name}")
         para.requires_grad = False
 
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
@@ -808,22 +808,17 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     
 
     # 定义评估指标函数
-    # 计算 MSE
-    mse = torch.mean((all_preds - all_targets) ** 2)
-
-    # 计算 MAE
-    mae = torch.mean(torch.abs(all_preds - all_targets))
-
-    # 计算 RMSE
-    rmse = torch.sqrt(mse)
+    
+    mse = torch.mean((all_preds - all_targets) ** 2) # 计算 MSE
+    mae = torch.mean(torch.abs(all_preds - all_targets)) # 计算 MAE    
+    rmse = torch.sqrt(mse) # 计算 RMSE
 
     # 计算 R2
     ss_res = torch.sum((all_targets - all_preds) ** 2)
     ss_tot = torch.sum((all_targets - torch.mean(all_targets)) ** 2)
     r2 = 1 - ss_res / ss_tot
-
-    # 计算 MAPE
-    mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100
+    
+    mape = torch.mean(torch.abs((all_targets - all_preds) / all_targets)) * 100  # 计算 MAPE
 
     val_loss = total_loss / total_num
 
@@ -933,5 +928,8 @@ for epoch in range(1, epochs + 1):
 
 # save the model into the save_dir
 torch.save(best_model.state_dict(), save_dir / "model.pt")
+
+
+
 
 
