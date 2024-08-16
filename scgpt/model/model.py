@@ -1201,6 +1201,8 @@ class ContinuousValueDeoder(nn.Module):
 class RegressionEncoder(nn.Module):
     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.3):
         super(RegressionEncoder, self).__init__()
+        
+        # 定义网络层
         self.fc1 = nn.Linear(d_model, d_model)
         self.bn1 = nn.BatchNorm1d(d_model)
         self.activation1 = nn.LeakyReLU()
@@ -1216,6 +1218,15 @@ class RegressionEncoder(nn.Module):
         self.fc4 = nn.Linear(d_model // 4, output_dim)
         
         self.dropout = nn.Dropout(dropout)
+        
+        # 调用权重初始化函数
+        self._init_weights()
+
+    def _init_weights(self):
+        # 使用Xavier初始化线性层的权重
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
 
     def forward(self, x):
         x = self.activation1(self.bn1(self.fc1(x)))

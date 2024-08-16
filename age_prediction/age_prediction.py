@@ -87,8 +87,8 @@ hyperparameter_defaults = dict(
     MVC=False, # Masked value prediction for cell embedding
     ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
     dab_weight=0.0,
-    lr=1e-4,
-    
+    lr=0.0005,
+
     batch_size=64,
     layer_size=512, # 128
     nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
@@ -360,9 +360,9 @@ age = adata.obs["age"].tolist()
 age = np.array(age)
 # print(age)
 
-batch_ids = adata.obs["batch_id"].tolist()
-num_batch_types = len(set(batch_ids))
-batch_ids = np.array(batch_ids)
+# batch_ids = adata.obs["batch_id"].tolist()
+# num_batch_types = len(set(batch_ids))
+# batch_ids = np.array(batch_ids)
 
 (
     train_data,
@@ -575,7 +575,7 @@ criterion_cls = nn.SmoothL1Loss()
 # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 # scaler = torch.cuda.amp.GradScaler(enabled=True)
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, eps=1e-8)
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-8)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 scaler = torch.cuda.amp.GradScaler(enabled=True)
 
@@ -933,3 +933,5 @@ for epoch in range(1, epochs + 1):
 
 # save the model into the save_dir
 torch.save(best_model.state_dict(), save_dir / "model.pt")
+
+
