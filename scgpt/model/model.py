@@ -280,7 +280,6 @@ class TransformerModel(nn.Module):
         
         # new add
         cell_emb = F.relu(cell_emb)
-        # 添加线性层进行回归
         cell_emb = self.linear(cell_emb)  # 假设 self.linear 是一个 nn.Linear
         
         return cell_emb
