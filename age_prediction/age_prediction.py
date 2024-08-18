@@ -18,24 +18,20 @@ print("scgpt location: ", scgpt.__file__)
 importlib.reload(scgpt)
 
 
-import copy
-import gc
 import json
+import copy
 import os
 from pathlib import Path
 import shutil
 import sys
 import time
-import traceback
 from typing import List, Tuple, Dict, Union, Optional
 import warnings
 import pandas as pd
 # from . import asyn
-import pickle
 import torch
 from anndata import AnnData
 import scanpy as sc
-import scvi
 import seaborn as sns
 import numpy as np
 import wandb
@@ -50,21 +46,15 @@ from torchtext.vocab import Vocab
 from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
-from sklearn.metrics import confusion_matrix
 
 sys.path.insert(0, "../")
 import scgpt as scg
-from scgpt.model import TransformerModel, AdversarialDiscriminator
-from scgpt.tokenizer import tokenize_and_pad_batch, random_mask_value
-from scgpt.loss import (
-    masked_mse_loss,
-    masked_relative_error,
-    criterion_neg_log_bernoulli,
-)
+from scgpt.model import TransformerModel
+from scgpt.tokenizer import tokenize_and_pad_batch
+
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
 from scgpt.preprocess import Preprocessor
-from scgpt import SubsetsBatchSampler
-from scgpt.utils import set_seed, category_str2int, eval_scib_metrics
+from scgpt.utils import set_seed
 
 sc.set_figure_params(figsize=(6, 6))
 
@@ -80,35 +70,28 @@ warnings.filterwarnings('ignore')
 hyperparameter_defaults = dict(
     seed=0,
     do_train=True,
-    load_model="/data/mr423/project/pre_trained_model/scGPT_blood",
-    mask_ratio=0.0,  
-    n_bins=51,
-    MVC=False, # Masked value prediction for cell embedding
-    ecs_thres=0.0, # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
-    dab_weight=0.0,
-    
-    epochs=2,
-    lr=0.0005,
-    batch_size=64,
+    load_model="/data/mr423/project/pre_trained_model/scGPT_human",
+    n_bins=101,
+
+    epochs=30,
+    lr=0.001,
+    batch_size=256,
 
     layer_size=128, # 128
     nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
     
     dropout=0.0,  # dropout probability
-    schedule_ratio=0.9,  # ratio of epochs for learning rate schedule
-    save_eval_interval=5,
+
     use_fast_transformer=True,
     pre_norm=False,
     amp=True,  # Automatic Mixed Precision
-    include_zero_gene = False,
     freeze = True, #freeze
-    DSBN = False,  # Domain-spec batchnorm
 )
 
 run = wandb.init(
     config=hyperparameter_defaults,
-    project="age_prediction-test",
+    project="age_pred",
     reinit=True,
     settings=wandb.Settings(start_method="fork"),
 )
@@ -123,40 +106,17 @@ set_seed(config.seed)
 
 pad_token = "<pad>"
 special_tokens = [pad_token, "<cls>", "<eoc>"]
-mask_ratio = config.mask_ratio
 mask_value = "auto"  # for masked values, now it should always be auto
 
-include_zero_gene = config.include_zero_gene  # if True, include zero genes among hvgs in the training
 max_seq_len = 3001
 n_bins = config.n_bins
 
 # input/output representation
 input_style = "binned"  # "normed_raw", "log1p", or "binned"                                    # decide the type of the input
-# output_style = "normed_raw"  # "normed_raw", "log1p", or "binned"
 
-######################################################################
-# Settings for training
-######################################################################
-MLM = False  # whether to use masked language modeling, currently it is always on.
-CLS = True  # celltype classification objective
-ADV = False  # Adversarial training for batch correction
-CCE = False  # Contrastive cell embedding objective
-MVC = config.MVC  # Masked value prediction for cell embedding
-ECS = config.ecs_thres > 0  # Elastic cell similarity objective
-DAB = False  # Domain adaptation by reverse backpropagation, set to 2 for separate optimizer
-INPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
 input_emb_style = "category"  # "category" or "continuous" or "scaling"
 cell_emb_style = "w-pool"  # "avg-pool" or "w-pool" or "cls"
-adv_E_delay_epochs = 0  # delay adversarial training on encoder for a few epochs
-adv_D_delay_epochs = 0
-mvc_decoder_style = "inner product"
-ecs_threshold = config.ecs_thres
-dab_weight = config.dab_weight
 
-explicit_zero_prob = MLM and include_zero_gene  # whether explicit bernoulli for zeros
-do_sample_in_train = False and explicit_zero_prob  # sample the bernoulli in training
-
-per_seq_batch_sample = False
 
 ######################################################################
 # Settings for optimizer
@@ -165,9 +125,7 @@ lr = config.lr
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
-schedule_interval = 1
-
-early_stop = 10
+early_stop = 5
 
 ######################################################################
 # Settings for the model
@@ -181,17 +139,8 @@ nlayers = config.nlayers  # number of TransformerEncoderLayer in TransformerEnco
 nhead = config.nhead  # number of heads in nn.MultiheadAttention
 dropout = config.dropout  # dropout probability
 
-######################################################################
-# Settings for the logging
-######################################################################
-log_interval = 100  # iterations
-save_eval_interval = config.save_eval_interval  # epochs
-do_eval_scib_metrics = True
-
-
 # %% validate settings
 assert input_style in ["normed_raw", "log1p", "binned"]
-# assert output_style in ["normed_raw", "log1p", "binned"]
 assert input_emb_style in ["category", "continuous", "scaling"]
 
 # if input_style == "binned":
@@ -212,16 +161,12 @@ else:
     pad_value = -2
     n_input_bins = n_bins
 
-# if ADV and DAB:
-#     raise ValueError("ADV and DAB cannot be both True.")
-# DAB_separate_optim = True if DAB > 1 else False
-
 
 ######################################################################
 # Settings for the running recording
 ######################################################################
 dataset_name = 'biobank'
-save_dir = Path(f"/data/mr423/project/data/save/{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
+save_dir = Path(f"/data/mr423/project/code/save/{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
 save_dir.mkdir(parents=True, exist_ok=True)
 
 print(f"save to {save_dir}")
@@ -232,8 +177,8 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 ######################################################################
 # Data loading
 ######################################################################
-adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train_new.h5ad")
-adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test_new.h5ad")
+adata = sc.read("/data/mr423/project/data/3-OLINK_data_sub_train_all.h5ad")
+adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_sub_test_all.h5ad")
 
 print(adata.shape)
 print(adata_test.shape)
@@ -254,16 +199,6 @@ adata = adata.concatenate(adata_test, batch_key="str_batch")
 batch_id_labels = adata.obs["str_batch"].astype("category").cat.codes.values
 adata.obs["batch_id"] = batch_id_labels
 
-# celltype_id_labels = adata.obs["Age_Group"].astype("category").cat.codes.values
-# celltypes = adata.obs["Age_Group"].unique()
-
-
-num_types = 1
-# num_types = len(np.unique(celltype_id_labels))
-# id2type = dict(enumerate(adata.obs["Age_Group"].astype("category").cat.categories))
-print(num_types)
-
-# adata.obs["celltype_id"] = celltype_id_labels
 adata.var["gene_name"] = adata.var.index.tolist()
 
 
@@ -362,10 +297,6 @@ age = adata.obs["age"].tolist()
 age = np.array(age)
 # print(age)
 
-# batch_ids = adata.obs["batch_id"].tolist()
-# num_batch_types = len(set(batch_ids))
-# batch_ids = np.array(batch_ids)
-
 (
     train_data,
     valid_data,
@@ -382,7 +313,6 @@ if config.load_model is None:
 vocab.set_default_index(vocab["<pad>"])
 gene_ids = np.array(vocab(genes), dtype=int)
 
-
 ######################################################################
 # Tokenize the data
 ######################################################################
@@ -394,7 +324,7 @@ tokenized_train = tokenize_and_pad_batch(
     pad_token=pad_token,
     pad_value=pad_value,
     append_cls=True,  # append <cls> token at the beginning
-    include_zero_gene=include_zero_gene,
+    include_zero_gene=False,
 )
 tokenized_valid = tokenize_and_pad_batch(
     valid_data,
@@ -404,7 +334,7 @@ tokenized_valid = tokenize_and_pad_batch(
     pad_token=pad_token,
     pad_value=pad_value,
     append_cls=True,
-    include_zero_gene=include_zero_gene,
+    include_zero_gene=False,
 )
 logger.info(
     f"train set number of samples: {tokenized_train['genes'].shape[0]}, "
@@ -416,7 +346,7 @@ logger.info(
 )
 
 
-def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
+def prepare_data() -> Tuple[Dict[str, torch.Tensor]]:
 
     input_gene_ids_train, input_gene_ids_valid = (
         tokenized_train["genes"],
@@ -490,7 +420,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ntokens = len(vocab)  # size of gene vocabulary
 
 print("\n\n **** load model parameters ****")
-
 print(f'lr = {lr}, batch_size = {batch_size}, epochs = {epochs}')
 print(f'ntokens = {ntokens}, layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
 print("**** load model parameters ****\n")
@@ -502,22 +431,20 @@ model = TransformerModel(
     d_hid,
     nlayers,
     nlayers_cls=3,
-    n_cls=num_types if CLS else 1,
+    n_cls=1,
     vocab=vocab,
     dropout=dropout,
     pad_token=pad_token,
     pad_value=pad_value,
-    do_mvc=MVC,
-    do_dab=DAB,
-    use_batch_labels=INPUT_BATCH_LABELS,
+    do_mvc=False,
+    do_dab=False,
+    use_batch_labels=False,
     num_batch_labels=None,
-    domain_spec_batchnorm=config.DSBN,
+    domain_spec_batchnorm=False,
     input_emb_style=input_emb_style,
     n_input_bins=n_input_bins,
     cell_emb_style=cell_emb_style,
-    mvc_decoder_style=mvc_decoder_style,
-    ecs_threshold=ecs_threshold,
-    explicit_zero_prob=explicit_zero_prob,
+    explicit_zero_prob=False,
     use_fast_transformer=use_fast_transformer,
     fast_transformer_backend=fast_transformer_backend,
     pre_norm=config.pre_norm,
@@ -576,7 +503,7 @@ wandb.watch(model)
 # from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 criterion = nn.MSELoss()
-# criterion_cls = nn.SmoothL1Loss()
+# nn.SmoothL1Loss()
 # optimizer = torch.optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
 
@@ -604,9 +531,6 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     all_preds = []
     all_targets = []
     
-    start_time = time.time()
-
-    num_batches = len(loader)
     for batch, batch_data in enumerate(loader):
         
         input_gene_ids = batch_data["gene_ids"].to(device)        # torch.Size([batch_size, 2890]) -- (batch_size, seq_len)
@@ -630,13 +554,12 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 input_gene_ids,
                 input_values,
                 src_key_padding_mask=src_key_padding_mask,
-                # batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
                 batch_labels=None,
-                CLS=CLS,
-                CCE=CCE,
-                MVC=MVC,
-                ECS=ECS,
-                do_sample=do_sample_in_train,
+                CLS=False,
+                CCE=False,
+                MVC=False,
+                ECS=False,
+                do_sample=False,
                 #generative_training=False
             )
             
@@ -647,10 +570,6 @@ def train(model: nn.Module, loader: DataLoader) -> None:
 
             # print("output : ",output_values.size())
             # print("ground : ",age.size())
-
-        # optimizer.zero_grad()
-        # loss.backward()  # 直接反向传播
-        # optimizer.step()  # 更新参数
                        
         optimizer.zero_grad()
         scaler.scale(loss).backward()  # 缩放损失并反向传播
@@ -747,13 +666,12 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
                     input_gene_ids,
                     input_values,
                     src_key_padding_mask=src_key_padding_mask,
-                    # batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
                     batch_labels=None,
-                    CLS=CLS,  # evaluation does not need CLS or CCE
+                    CLS=False, 
                     CCE=False,
                     MVC=False,
                     ECS=False,
-                    do_sample=do_sample_in_train,
+                    do_sample=False,
                     #generative_training = False,
                 )
                 
@@ -834,12 +752,12 @@ logger.info("Apply the model on the age of the prediction \n")
 
 for epoch in range(1, epochs + 1):
     # epoch_start_time = time.time()
-    train_data_pt, valid_data_pt = prepare_data(sort_seq_batch=per_seq_batch_sample)
+    train_data_pt, valid_data_pt = prepare_data()
 
     train_loader = prepare_dataloader(
         train_data_pt,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,
         intra_domain_shuffle=True,
         drop_last=False,
     )
@@ -859,21 +777,21 @@ for epoch in range(1, epochs + 1):
 
     val_loss = evaluate(model,loader=valid_loader)
 
-    # if val_loss < best_val_loss:
-    #     best_val_loss = val_loss
-    #     best_model = copy.deepcopy(model)
-    #     best_model_epoch = epoch
-    #     logger.info(f"Best model with score {best_val_loss:5.4f}")
-        # patience = 0
-    # else:
-    #     patience += 1
-    #     if patience >= early_stop:
-    #         logger.info(f"Early stop at epoch {epoch}")
-    #         break
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_model = copy.deepcopy(model)
+        best_model_epoch = epoch
+        logger.info(f"Best model with score {best_val_loss:5.4f}")
+        patience = 0
+    else:
+        patience += 1
+        if patience >= early_stop:
+            logger.info(f"Early stop at epoch {epoch}")
+            break
 
 
 # save the model into the save_dir
-# torch.save(best_model.state_dict(), save_dir / "model.pt")
+torch.save(best_model.state_dict(), save_dir / "model.pt")
 
 ######################################################################
 # Test the model
@@ -886,7 +804,7 @@ def test(model: nn.Module, adata: DataLoader):
         else adata.layers[input_layer_key]
     )
 
-    print(adata.layers[input_layer_key])
+    # print(adata.layers[input_layer_key])
 
     age = adata.obs["age"].tolist()
     age = np.array(age)
@@ -900,7 +818,7 @@ def test(model: nn.Module, adata: DataLoader):
         pad_token=pad_token,
         pad_value=pad_value,
         append_cls=True,  # append <cls> token at the beginning
-        include_zero_gene=include_zero_gene,
+        include_zero_gene=False,
     )
 
     tensor_age_test = torch.from_numpy(age).float()
@@ -941,21 +859,23 @@ def test(model: nn.Module, adata: DataLoader):
                     input_gene_ids,
                     input_values,
                     src_key_padding_mask=src_key_padding_mask,
-                    # batch_labels=batch_labels if INPUT_BATCH_LABELS or config.DSBN else None,
                     batch_labels=None,
-                    CLS=CLS,  # evaluation does not need CLS or CCE
+                    CLS=False, 
                     CCE=False,
                     MVC=False,
                     ECS=False,
-                    do_sample=do_sample_in_train,
+                    do_sample=False,
                     #generative_training = False,
                 )
                     
                 output_values = output_dict["reg_output"]
+                output_values = torch.round(output_values * 10) / 10
                 output_values = output_values.squeeze()
 
             # print("output : ",output_values.size())
             # print("ground : ",age.size())
+
+                age = torch.round(age * 10) / 10
 
                 loss = criterion(output_values, age)
 
@@ -970,19 +890,18 @@ def test(model: nn.Module, adata: DataLoader):
     all_preds = torch.cat(all_preds)
     all_targets = torch.cat(all_targets)
 
-    # all_preds_save_dir = str(save_dir) + "/all_preds.txt"
-    
-    # with open(all_preds_save_dir, "w") as file:
-    #     file.write(str(all_preds))
-    
-    # all_targets_save_dir = str(save_dir) + "/all_targets.txt"
-    # with open(all_targets_save_dir, "w") as file:
-    #     file.write(str(all_targets))
-
-
     # 将 Tensor 转换为 Python 列表
     all_preds_list = all_preds.tolist()
     all_targets_list = all_targets.tolist()
+
+    all_preds_save_dir = str(save_dir) + "/all_preds.txt"
+    
+    with open(all_preds_save_dir, "w") as file:
+        file.write(str(all_preds_list))
+    
+    all_targets_save_dir = str(save_dir) + "/all_targets.txt"
+    with open(all_targets_save_dir, "w") as file:
+        file.write(str(all_targets_list))
 
     # 创建 DataFrame
     all_preds_df = pd.DataFrame(all_preds_list, columns=['Predictions'])
@@ -990,6 +909,9 @@ def test(model: nn.Module, adata: DataLoader):
 
     # 合并 DataFrame
     combined_df = pd.concat([all_preds_df, all_targets_df], axis=1)
+
+    combined_df['Predictions'] = combined_df['Predictions'].round(1)
+    combined_df['Target'] = combined_df['Target'].round(1)
 
     # 文件路径
     data_save_dir = str(save_dir) + "/output.csv"
@@ -1020,3 +942,36 @@ def test(model: nn.Module, adata: DataLoader):
     
 
 test(model, adata_test)
+
+
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+df = pd.read_csv(str(save_dir) + "/output.csv")
+
+# 提取预测值和实际值
+y_pred = df['Predictions']
+y_true = df['Target']
+
+# 均方误差 (MSE)
+mse = mean_squared_error(y_true, y_pred)
+
+# 平均绝对误差 (MAE)
+mae = mean_absolute_error(y_true, y_pred)
+
+# 均方根误差 (RMSE)
+rmse = np.sqrt(mse)
+
+# 决定系数 (R²)
+r2 = r2_score(y_true, y_pred)
+
+# 平均绝对百分比误差 (MAPE)
+mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+# 输出结果
+print(f'MSE: {mse:.2f}')
+print(f'MAE: {mae:.2f}')
+print(f'RMSE: {rmse:.2f}')
+print(f'R²: {r2:.2f}')
+print(f'MAPE: {mape:.2f}%')
+
+wandb.finish()

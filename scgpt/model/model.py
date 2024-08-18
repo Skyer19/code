@@ -47,8 +47,8 @@ class TransformerModel(nn.Module):
         input_emb_style: str = "continuous",
         n_input_bins: Optional[int] = None,
         cell_emb_style: str = "cls",
-        mvc_decoder_style: str = "inner product",
-        ecs_threshold: float = 0.3,
+        # mvc_decoder_style: str = "inner product",
+        # ecs_threshold: float = 0.3,
         explicit_zero_prob: bool = False,
         use_fast_transformer: bool = False,
         fast_transformer_backend: str = "flash",
@@ -58,7 +58,7 @@ class TransformerModel(nn.Module):
         self.model_type = "Transformer"
         self.d_model = d_model
         self.do_dab = do_dab
-        self.ecs_threshold = ecs_threshold
+        # self.ecs_threshold = ecs_threshold
         self.use_batch_labels = use_batch_labels
         self.domain_spec_batchnorm = domain_spec_batchnorm
         self.input_emb_style = input_emb_style
