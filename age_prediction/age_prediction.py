@@ -73,7 +73,7 @@ hyperparameter_defaults = dict(
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=50,
+    epochs=25,
     lr=0.001,
     batch_size=128,
 
@@ -178,7 +178,7 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 # Data loading
 ######################################################################
 adata = sc.read("/data/mr423/project/data/split_data_for_re_train/3-OLINK_data_train_withOutlier_part1.h5ad")
-adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_test_withOutlier_all.h5ad")
+adata_test = sc.read("/data/mr423/project/data/split_data_for_re_train/3-OLINK_data_test_withOutlier_all.h5ad")
 
 print(adata.shape)
 print(adata_test.shape)
@@ -783,11 +783,11 @@ for epoch in range(1, epochs + 1):
         best_model_epoch = epoch
         logger.info(f"Best model with score {best_val_loss:5.4f}")
         patience = 0
-    else:
-        patience += 1
-        if patience >= early_stop:
-            logger.info(f"Early stop at epoch {epoch}")
-            break
+    # else:
+    #     patience += 1
+    #     if patience >= early_stop:
+    #         logger.info(f"Early stop at epoch {epoch}")
+    #         break
 
 
 # save the model into the save_dir

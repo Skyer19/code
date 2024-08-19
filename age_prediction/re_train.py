@@ -73,7 +73,7 @@ hyperparameter_defaults = dict(
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=30,
+    epochs=100,
     lr=0.0001,
     batch_size=128,
 
@@ -91,7 +91,7 @@ hyperparameter_defaults = dict(
 
 run = wandb.init(
     config=hyperparameter_defaults,
-    project="age_pred",
+    project="age_pred", # 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
     reinit=True,
     settings=wandb.Settings(start_method="fork"),
 )
@@ -125,7 +125,7 @@ lr = config.lr
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
-early_stop = 5
+early_stop = 10
 
 ######################################################################
 # Settings for the model
@@ -177,8 +177,13 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 ######################################################################
 # Data loading
 ######################################################################
+# 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
+# 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
 adata = sc.read("/data/mr423/project/data/3-OLINK_data_train_withOutlier_all.h5ad")
 adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_test_withOutlier_all.h5ad")
+
+# adata = sc.read("/data/mr423/project/data/split_data_for_re_train/3-OLINK_data_train_withOutlier_part2.h5ad")
+# adata_test = sc.read("/data/mr423/project/data/split_data_for_re_train/3-OLINK_data_test_withOutlier_all.h5ad")
 
 print(adata.shape)
 print(adata_test.shape)
@@ -208,8 +213,12 @@ adata.var["gene_name"] = adata.var.index.tolist()
 if config.load_model is not None:
     model_dir = config.load_model
     # model_config_file = model_dir + "/args.json"
+
     model_file = "/data/mr423/project/code/save/biobank-Aug19-08-37/model.pt"
     vocab_file = "/data/mr423/project/code/save/biobank-Aug19-08-37/vocab.json"
+    
+    # model_file = "/data/mr423/project/code/save/biobank-Aug19-16-30/model.pt"
+    # vocab_file = "/data/mr423/project/code/save/biobank-Aug19-16-30/vocab.json"
 
     vocab = GeneVocab.from_file(vocab_file)
     shutil.copy(vocab_file, save_dir / "vocab.json")
@@ -477,9 +486,34 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 print("-"*20)
 print("-"*20)
 
+# 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
 
 # 列出要解冻的层的名称
 layers_to_unfreeze = [
+    # "transformer_encoder.layers.8.self_attn.Wqkv.weight",
+    # "transformer_encoder.layers.8.self_attn.Wqkv.bias",
+    # "transformer_encoder.layers.8.self_attn.out_proj.weight",
+    # "transformer_encoder.layers.8.self_attn.out_proj.bias",
+    # "transformer_encoder.layers.8.linear1.weight",
+    # "transformer_encoder.layers.8.linear1.bias",
+    # "transformer_encoder.layers.8.linear2.weight",
+    # "transformer_encoder.layers.8.linear2.bias",
+    # "transformer_encoder.layers.8.norm1.weight",
+    # "transformer_encoder.layers.8.norm1.bias",
+    # "transformer_encoder.layers.8.norm2.weight",
+    # "transformer_encoder.layers.8.norm2.bias",
+    "transformer_encoder.layers.9.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.9.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.9.self_attn.out_proj.weight",
+    "transformer_encoder.layers.9.self_attn.out_proj.bias",
+    "transformer_encoder.layers.9.linear1.weight",
+    "transformer_encoder.layers.9.linear1.bias",
+    "transformer_encoder.layers.9.linear2.weight",
+    "transformer_encoder.layers.9.linear2.bias",
+    "transformer_encoder.layers.9.norm1.weight",
+    "transformer_encoder.layers.9.norm1.bias",
+    "transformer_encoder.layers.9.norm2.weight",
+    "transformer_encoder.layers.9.norm2.bias",
     "transformer_encoder.layers.10.self_attn.Wqkv.weight",
     "transformer_encoder.layers.10.self_attn.Wqkv.bias",
     "transformer_encoder.layers.10.self_attn.out_proj.weight",

@@ -1210,9 +1210,6 @@ class RegressionEncoder(nn.Module):
         self.bn2 = nn.BatchNorm1d(d_model // 2)
         self.activation2 = nn.LeakyReLU()
         
-        # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
-        # self.bn3 = nn.BatchNorm1d(d_model // 4)
-        # self.activation3 = nn.LeakyReLU()
         
         self.fc4 = nn.Linear(d_model // 2, output_dim)
         
