@@ -1210,11 +1210,11 @@ class RegressionEncoder(nn.Module):
         self.bn2 = nn.BatchNorm1d(d_model // 2)
         self.activation2 = nn.LeakyReLU()
         
-        self.fc3 = nn.Linear(d_model // 2, d_model // 4)
-        self.bn3 = nn.BatchNorm1d(d_model // 4)
-        self.activation3 = nn.LeakyReLU()
+        # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
+        # self.bn3 = nn.BatchNorm1d(d_model // 4)
+        # self.activation3 = nn.LeakyReLU()
         
-        self.fc4 = nn.Linear(d_model // 4, output_dim)
+        self.fc4 = nn.Linear(d_model // 2, output_dim)
         
         self.dropout = nn.Dropout(dropout)
         
@@ -1234,6 +1234,6 @@ class RegressionEncoder(nn.Module):
         x = self.activation2(self.bn2(self.fc2(x)))
         x = self.dropout(x)
         
-        x = self.activation3(self.bn3(self.fc3(x)))
+        # x = self.activation3(self.bn3(self.fc3(x)))
         x = self.fc4(x)
         return x

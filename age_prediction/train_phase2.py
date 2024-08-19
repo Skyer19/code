@@ -78,9 +78,8 @@ hyperparameter_defaults = dict(
     seed=0,
     do_train=True,
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",  # This is the pre-trained model directory
-    mask_ratio=0.0,  
     n_bins=101,
-    MVC=False,
+
     ecs_thres=0.0,
     dab_weight=0.0,
     
@@ -178,7 +177,7 @@ model = TransformerModel(
     dropout=dropout,
     pad_token=pad_token,
     pad_value=config.n_bins,
-    do_mvc=config.MVC,
+    do_mvc=False,
     do_dab=config.DAB,
     use_batch_labels=config.INPUT_BATCH_LABELS,
     domain_spec_batchnorm=config.DSBN,
@@ -186,8 +185,7 @@ model = TransformerModel(
     n_input_bins=config.n_bins + 2,
     cell_emb_style="w-pool",
     mvc_decoder_style="inner product",
-    ecs_threshold=config.ecs_thres,
-    explicit_zero_prob=False,
+
     use_fast_transformer=config.use_fast_transformer,
     fast_transformer_backend="flash",
     pre_norm=config.pre_norm,
