@@ -1,3 +1,11 @@
+'''
+这里的学习率策略是：
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-8)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
+'''
+
 import tempfile
 import os
 
@@ -217,8 +225,8 @@ if config.load_model is not None:
     model_file = "/data/mr423/project/code/save/biobank-Aug19-08-37/model.pt"
     vocab_file = "/data/mr423/project/code/save/biobank-Aug19-08-37/vocab.json"
     
-    # model_file = "/data/mr423/project/code/save/biobank-Aug19-16-30/model.pt"
-    # vocab_file = "/data/mr423/project/code/save/biobank-Aug19-16-30/vocab.json"
+    # model_file = "/data/mr423/project/code/save/biobank-Aug19-22-17/model.pt"
+    # vocab_file = "/data/mr423/project/code/save/biobank-Aug19-22-17/vocab.json"
 
     vocab = GeneVocab.from_file(vocab_file)
     shutil.copy(vocab_file, save_dir / "vocab.json")
@@ -490,6 +498,18 @@ print("-"*20)
 
 # 列出要解冻的层的名称
 layers_to_unfreeze = [
+    "transformer_encoder.layers.6.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.6.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.6.self_attn.out_proj.weight",
+    "transformer_encoder.layers.6.self_attn.out_proj.bias",
+    "transformer_encoder.layers.6.linear1.weight",
+    "transformer_encoder.layers.6.linear1.bias",
+    "transformer_encoder.layers.6.linear2.weight",
+    "transformer_encoder.layers.6.linear2.bias",
+    "transformer_encoder.layers.6.norm1.weight",
+    "transformer_encoder.layers.6.norm1.bias",
+    "transformer_encoder.layers.6.norm2.weight",
+    "transformer_encoder.layers.6.norm2.bias",
     "transformer_encoder.layers.7.self_attn.Wqkv.weight",
     "transformer_encoder.layers.7.self_attn.Wqkv.bias",
     "transformer_encoder.layers.7.self_attn.out_proj.weight",
@@ -502,18 +522,18 @@ layers_to_unfreeze = [
     "transformer_encoder.layers.7.norm1.bias",
     "transformer_encoder.layers.7.norm2.weight",
     "transformer_encoder.layers.7.norm2.bias",
-    # "transformer_encoder.layers.8.self_attn.Wqkv.weight",
-    # "transformer_encoder.layers.8.self_attn.Wqkv.bias",
-    # "transformer_encoder.layers.8.self_attn.out_proj.weight",
-    # "transformer_encoder.layers.8.self_attn.out_proj.bias",
-    # "transformer_encoder.layers.8.linear1.weight",
-    # "transformer_encoder.layers.8.linear1.bias",
-    # "transformer_encoder.layers.8.linear2.weight",
-    # "transformer_encoder.layers.8.linear2.bias",
-    # "transformer_encoder.layers.8.norm1.weight",
-    # "transformer_encoder.layers.8.norm1.bias",
-    # "transformer_encoder.layers.8.norm2.weight",
-    # "transformer_encoder.layers.8.norm2.bias",
+    "transformer_encoder.layers.8.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.8.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.8.self_attn.out_proj.weight",
+    "transformer_encoder.layers.8.self_attn.out_proj.bias",
+    "transformer_encoder.layers.8.linear1.weight",
+    "transformer_encoder.layers.8.linear1.bias",
+    "transformer_encoder.layers.8.linear2.weight",
+    "transformer_encoder.layers.8.linear2.bias",
+    "transformer_encoder.layers.8.norm1.weight",
+    "transformer_encoder.layers.8.norm1.bias",
+    "transformer_encoder.layers.8.norm2.weight",
+    "transformer_encoder.layers.8.norm2.bias",
     "transformer_encoder.layers.9.self_attn.Wqkv.weight",
     "transformer_encoder.layers.9.self_attn.Wqkv.bias",
     "transformer_encoder.layers.9.self_attn.out_proj.weight",
