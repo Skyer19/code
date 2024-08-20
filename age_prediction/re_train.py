@@ -490,6 +490,18 @@ print("-"*20)
 
 # 列出要解冻的层的名称
 layers_to_unfreeze = [
+    "transformer_encoder.layers.7.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.7.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.7.self_attn.out_proj.weight",
+    "transformer_encoder.layers.7.self_attn.out_proj.bias",
+    "transformer_encoder.layers.7.linear1.weight",
+    "transformer_encoder.layers.7.linear1.bias",
+    "transformer_encoder.layers.7.linear2.weight",
+    "transformer_encoder.layers.7.linear2.bias",
+    "transformer_encoder.layers.7.norm1.weight",
+    "transformer_encoder.layers.7.norm1.bias",
+    "transformer_encoder.layers.7.norm2.weight",
+    "transformer_encoder.layers.7.norm2.bias",
     # "transformer_encoder.layers.8.self_attn.Wqkv.weight",
     # "transformer_encoder.layers.8.self_attn.Wqkv.bias",
     # "transformer_encoder.layers.8.self_attn.out_proj.weight",
