@@ -133,7 +133,7 @@ lr = config.lr
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
-early_stop = 10
+early_stop = 20
 
 ######################################################################
 # Settings for the model
