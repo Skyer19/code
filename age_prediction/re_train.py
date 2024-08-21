@@ -133,7 +133,7 @@ lr = config.lr
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
-early_stop = 10
+early_stop = 20
 
 ######################################################################
 # Settings for the model
@@ -498,6 +498,18 @@ print("-"*20)
 
 # 列出要解冻的层的名称
 layers_to_unfreeze = [
+    "transformer_encoder.layers.5.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.5.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.5.self_attn.out_proj.weight",
+    "transformer_encoder.layers.5.self_attn.out_proj.bias",
+    "transformer_encoder.layers.5.linear1.weight",
+    "transformer_encoder.layers.5.linear1.bias",
+    "transformer_encoder.layers.5.linear2.weight",
+    "transformer_encoder.layers.5.linear2.bias",
+    "transformer_encoder.layers.5.norm1.weight",
+    "transformer_encoder.layers.5.norm1.bias",
+    "transformer_encoder.layers.5.norm2.weight",
+    "transformer_encoder.layers.5.norm2.bias",
     "transformer_encoder.layers.6.self_attn.Wqkv.weight",
     "transformer_encoder.layers.6.self_attn.Wqkv.bias",
     "transformer_encoder.layers.6.self_attn.out_proj.weight",

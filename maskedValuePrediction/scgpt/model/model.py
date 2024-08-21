@@ -175,8 +175,6 @@ class TransformerModel(nn.Module):
 
         # self.sim = Similarity(temp=0.5)  # TODO: auto set temp
         # self.creterion_cce = nn.CrossEntropyLoss()
-
-        # self.continous_decoder = ContinuousValueDeoder(d_model, nlayers)
         
         self.linear = nn.Linear(d_model, d_model) 
         self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
@@ -1134,68 +1132,6 @@ class AdversarialDiscriminator(nn.Module):
             x = layer(x)
         return self.out_layer(x)
 
-
-# class ContinuousValueDeoder(nn.Module):
-    # def __init__(
-    #     self,
-    #     d_model: int,
-    #     output_dim: int = 1,  # Default to 1 for scalar regression output
-    #     nlayers: int = 3,
-    #     activation: callable = nn.ReLU,
-    # ):
-    #     super().__init__()
-        
-    #     # module list
-    #     self._decoder = nn.ModuleList()
-    #     for i in range(nlayers - 1):
-    #         self._decoder.append(nn.Linear(d_model, d_model))
-    #         self._decoder.append(activation())
-    #         self._decoder.append(nn.LayerNorm(d_model))
-    #     self.out_layer = nn.Linear(d_model, output_dim)
-
-    # def forward(self, x: Tensor) -> Tensor:
-    #     """
-    #     Args:
-    #         x: Tensor, shape [batch_size, embsize]
-    #     """
-    #     for layer in self._decoder:
-    #         x = layer(x)
-    #     return self.out_layer(x)
-    
-# class regDecoder(nn.Module):
-#     def __init__(self, d_model):
-#         super().__init__()
-#         self.fc = nn.Sequential(
-#             nn.Linear(d_model, d_model),
-#             nn.ReLU(),
-#             nn.Linear(d_model, d_model // 2),
-#             nn.ReLU(),
-#             nn.Linear(d_model // 2, d_model // 4),
-#             nn.ReLU(),
-#             nn.Linear(d_model // 4, 1),
-#         )
-
-#     def forward(self, x):
-#         output = self.fc(x)  # Pooling the sequence output to a single vector
-#         return output.squeeze(-1)
-    
-# class RegressionEncoder(nn.Module):
-#     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.1):
-#         super(RegressionEncoder, self).__init__()
-#         # 增加模型复杂性：增加更多隐藏层和神经元
-#         self.fc1 = nn.Linear(d_model, d_model)
-#         self.act1 = nn.ReLU()
-#         self.fc2 = nn.Linear(d_model, d_model // 2)
-#         # self.act2 = nn.ReLU()
-#         # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
-#         self.fc4 = nn.Linear(d_model // 2, output_dim)
-
-#     def forward(self, x):
-#         x = self.fc1(x)
-#         x = self.act1(x)
-#         x = self.fc2(x)
-#         x = self.fc4(x)
-#         return x
 
 class RegressionEncoder(nn.Module):
     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.3):

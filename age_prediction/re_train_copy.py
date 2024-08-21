@@ -88,7 +88,7 @@ hyperparameter_defaults = dict(
     nlayers=12,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
     
-    dropout=0.0,  # dropout probability
+    dropout=0.2,  # dropout probability
 
     use_fast_transformer=True,
     pre_norm=False,
