@@ -2,7 +2,26 @@
 import copy
 import gc
 import json
+
+import tempfile
 import os
+
+# 检查 tempfile 模块使用的临时文件目录
+temp_dir = tempfile.gettempdir()
+print("Updated temp directory:", temp_dir)
+
+import sys
+import importlib
+
+new_path = '/data/mr423/project/codeage_prediction/'
+if new_path not in sys.path:
+    sys.path.insert(0, new_path)
+
+# relaod the scgpt files
+import scgpt
+print("scgpt location: ", scgpt.__file__)
+importlib.reload(scgpt)
+
 from pathlib import Path
 import shutil
 import sys
