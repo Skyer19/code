@@ -156,7 +156,7 @@ class TransformerModel(nn.Module):
         #     explicit_zero_prob=explicit_zero_prob,
         #     use_batch_labels=use_batch_labels,
         # )
-        # self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
         
         # if do_mvc:
         #     self.mvc_decoder = MVCDecoder(
@@ -447,9 +447,7 @@ class TransformerModel(nn.Module):
 
         output["reg_output"] = self.reg_decoder(cell_emb)
 
-
-        # if CLS:
-        #     output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
+        output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
         
         ## 对比学习
         # if CCE:

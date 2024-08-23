@@ -118,7 +118,6 @@ set_seed(config.seed)
 ######################################################################
 pad_token = "<pad>"
 special_tokens = [pad_token, "<cls>", "<eoc>"]
-mask_ratio = config.mask_ratio
 mask_value = "auto"  # for masked values, now it should always be auto
 
 max_seq_len = 3001
@@ -131,28 +130,13 @@ cell_emb_style = "cls"  # "avg-pool" or "w-pool" or "cls"
 
 
 # settings for training
-MLM = False  # whether to use masked language modeling, currently it is always on.
 CLS = True  # celltype classification objective
-ADV = False  # Adversarial training for batch correction
-CCE = False  # Contrastive cell embedding objective
-MVC = config.MVC  # Masked value prediction for cell embedding
-ECS = config.ecs_thres > 0  # Elastic cell similarity objective
 
-INPUT_BATCH_LABELS = False  # TODO: have these help MLM and MVC, while not to classifier
-
-
-mvc_decoder_style = "inner product"
-ecs_threshold = config.ecs_thres
-
-do_sample_in_train = False and explicit_zero_prob  # sample the bernoulli in training
-
-per_seq_batch_sample = False
 
 ######################################################################
 # Settings for optimizer
 ######################################################################
 lr = config.lr  # TODO: test learning rate ratio between two tasks
-lr_ADV = 1e-3  # learning rate for discriminator, used when ADV is True
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
@@ -238,7 +222,6 @@ adata = adata.concatenate(adata_test, batch_key="str_batch")
 # make the batch category column
 batch_id_labels = adata.obs["str_batch"].astype("category").cat.codes.values
 adata.obs["batch_id"] = batch_id_labels
-
 
 
 ageGroup_id_labels = adata.obs["Age_Group"].astype("category").cat.codes.values
@@ -680,7 +663,7 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
                     CCE=False,
                     MVC=False,
                     ECS=False,
-                    do_sample=do_sample_in_train,
+                    do_sample=False,
                     #generative_training = False,
                 )
 
