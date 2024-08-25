@@ -156,7 +156,6 @@ class TransformerModel(nn.Module):
         #     explicit_zero_prob=explicit_zero_prob,
         #     use_batch_labels=use_batch_labels,
         # )
-        self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
         
         # if do_mvc:
         #     self.mvc_decoder = MVCDecoder(
@@ -179,7 +178,8 @@ class TransformerModel(nn.Module):
         # self.continous_decoder = ContinuousValueDeoder(d_model, nlayers)
         
         self.linear = nn.Linear(d_model, d_model) 
-        self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
+        # self.cls_encoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        self.classified_decoder = ClassificationDecoder(d_model, n_cls)
 
         self.init_weights()
 
@@ -445,9 +445,9 @@ class TransformerModel(nn.Module):
         output["cell_emb"] = cell_emb
 
 
-        output["reg_output"] = self.reg_decoder(cell_emb)
-
-        output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
+        # output["reg_output"] = self.reg_decoder(cell_emb)
+        # output["cls_output"] = self.cls_encoder(cell_emb)  # (batch, n_cls)
+        output["classified_output"] = self.classified_decoder(cell_emb)  # (batch, n_cls)
         
         ## 对比学习
         # if CCE:
@@ -1132,69 +1132,6 @@ class AdversarialDiscriminator(nn.Module):
             x = layer(x)
         return self.out_layer(x)
 
-
-# class ContinuousValueDeoder(nn.Module):
-    # def __init__(
-    #     self,
-    #     d_model: int,
-    #     output_dim: int = 1,  # Default to 1 for scalar regression output
-    #     nlayers: int = 3,
-    #     activation: callable = nn.ReLU,
-    # ):
-    #     super().__init__()
-        
-    #     # module list
-    #     self._decoder = nn.ModuleList()
-    #     for i in range(nlayers - 1):
-    #         self._decoder.append(nn.Linear(d_model, d_model))
-    #         self._decoder.append(activation())
-    #         self._decoder.append(nn.LayerNorm(d_model))
-    #     self.out_layer = nn.Linear(d_model, output_dim)
-
-    # def forward(self, x: Tensor) -> Tensor:
-    #     """
-    #     Args:
-    #         x: Tensor, shape [batch_size, embsize]
-    #     """
-    #     for layer in self._decoder:
-    #         x = layer(x)
-    #     return self.out_layer(x)
-    
-# class regDecoder(nn.Module):
-#     def __init__(self, d_model):
-#         super().__init__()
-#         self.fc = nn.Sequential(
-#             nn.Linear(d_model, d_model),
-#             nn.ReLU(),
-#             nn.Linear(d_model, d_model // 2),
-#             nn.ReLU(),
-#             nn.Linear(d_model // 2, d_model // 4),
-#             nn.ReLU(),
-#             nn.Linear(d_model // 4, 1),
-#         )
-
-#     def forward(self, x):
-#         output = self.fc(x)  # Pooling the sequence output to a single vector
-#         return output.squeeze(-1)
-    
-# class RegressionEncoder(nn.Module):
-#     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.1):
-#         super(RegressionEncoder, self).__init__()
-#         # 增加模型复杂性：增加更多隐藏层和神经元
-#         self.fc1 = nn.Linear(d_model, d_model)
-#         self.act1 = nn.ReLU()
-#         self.fc2 = nn.Linear(d_model, d_model // 2)
-#         # self.act2 = nn.ReLU()
-#         # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
-#         self.fc4 = nn.Linear(d_model // 2, output_dim)
-
-#     def forward(self, x):
-#         x = self.fc1(x)
-#         x = self.act1(x)
-#         x = self.fc2(x)
-#         x = self.fc4(x)
-#         return x
-
 class RegressionEncoder(nn.Module):
     def __init__(self, d_model, output_dim: int = 1, dropout: float = 0.3):
         super(RegressionEncoder, self).__init__()
@@ -1230,5 +1167,69 @@ class RegressionEncoder(nn.Module):
         x = self.dropout(x)
         
         # x = self.activation3(self.bn3(self.fc3(x)))
+        x = self.fc4(x)
+        return x
+    
+class ClassificationDecoder(nn.Module):
+    def __init__(self, d_model, output_dim: int = 5, dropout: float = 0.3):
+        super(ClassificationDecoder, self).__init__()
+        
+        # 定义网络层
+        # self.fc1 = nn.Linear(d_model, d_model)
+        # self.bn1 = nn.BatchNorm1d(d_model)
+        # self.activation1 = nn.LeakyReLU()
+        
+        # self.fc2 = nn.Linear(d_model, d_model // 2)
+        # self.bn2 = nn.BatchNorm1d(d_model // 2)
+        # self.activation2 = nn.LeakyReLU()
+        
+        
+        # self.fc3 = nn.Linear(d_model, output_dim)
+        
+        # self.dropout = nn.Dropout(dropout)
+        
+        self.fc1 = nn.Linear(d_model, d_model)
+        self.bn1 = nn.BatchNorm1d(d_model)
+        self.activation1 = nn.LeakyReLU()
+        
+        self.fc2 = nn.Linear(d_model, d_model // 2)
+        self.bn2 = nn.BatchNorm1d(d_model // 2)
+        self.activation2 = nn.LeakyReLU()
+
+        self.fc3 = nn.Linear(d_model // 2, d_model // 4)
+        self.bn3 = nn.BatchNorm1d(d_model // 4)
+        self.activation3 = nn.LeakyReLU()        
+        
+        self.fc4 = nn.Linear(d_model //4, output_dim)
+        
+        self.dropout = nn.Dropout(dropout)
+        
+        # 调用权重初始化函数
+        self._init_weights()
+
+    def _init_weights(self):
+        # 使用Xavier初始化线性层的权重
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+
+    def forward(self, x):
+        # x = self.activation1(self.bn1(self.fc1(x)))
+        # x = self.dropout(x)
+        
+        # # x = self.activation2(self.bn2(self.fc2(x)))
+        # # x = self.dropout(x)
+        
+        # x = self.fc3(x)
+
+        x = self.activation1(self.bn1(self.fc1(x)))
+        x = self.dropout(x)
+        
+        x = self.activation2(self.bn2(self.fc2(x)))
+        x = self.dropout(x)
+
+        x = self.activation3(self.bn3(self.fc3(x)))
+        x = self.dropout(x)
+        
         x = self.fc4(x)
         return x

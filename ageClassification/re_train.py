@@ -66,7 +66,6 @@ warnings.filterwarnings('ignore')
 # os.environ["WANDB_MODE"]= "offline"
 
 
-
 ######################################################################
 # Settings for wandb mentior
 ######################################################################
@@ -78,11 +77,11 @@ hyperparameter_defaults = dict(
     n_bins=101,
 
     epochs=100, # 2 !!!!!!!!!!!!  test only
-    lr=0.001,
+    lr=0.0001,
     batch_size=128,   # 128 !!!!!!!!!!!!  test only
 
-    layer_size=128, # 128
-    nlayers=4,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    layer_size=512, # 128
+    nlayers=12,  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead=8,  # number of heads in nn.MultiheadAttention
     
     dropout=0.0,  # dropout probability
@@ -236,9 +235,13 @@ adata.var["gene_name"] = adata.var.index.tolist()
 ######################################################################
 if config.load_model is not None:
     model_dir = config.load_model
-    model_config_file = model_dir + "/args.json"
-    model_file = model_dir + "/best_model.pt"
-    vocab_file = model_dir + "/vocab.json"
+    # model_config_file = model_dir + "/args.json"
+
+    model_file = "./trained_model/model.pt"
+    vocab_file = "./trained_model/vocab.json"
+
+    # model_file = model_dir + "/best_model.pt"
+    # vocab_file = model_dir + "/vocab.json"
 
     vocab = GeneVocab.from_file(vocab_file)
     shutil.copy(vocab_file, save_dir / "vocab.json")
@@ -256,22 +259,22 @@ if config.load_model is not None:
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
 
-    # model
-    with open(model_config_file, "r") as f:
-        model_configs = json.load(f)
-    logger.info(
-        f"Resume model from {model_file}, the model args will override the "
-        f"config {model_config_file}."
-    )
-    embsize = model_configs["embsize"]
-    nhead = model_configs["nheads"]
-    d_hid = model_configs["d_hid"]
-    nlayers = model_configs["nlayers"]
-    n_layers_cls = model_configs["n_layers_cls"]
+    # # model
+    # with open(model_config_file, "r") as f:
+    #     model_configs = json.load(f)
+    # logger.info(
+    #     f"Resume model from {model_file}, the model args will override the "
+    #     f"config {model_config_file}."
+    # )
+    # embsize = model_configs["embsize"]
+    # nhead = model_configs["nheads"]
+    # d_hid = model_configs["d_hid"]
+    # nlayers = model_configs["nlayers"]
+    # n_layers_cls = model_configs["n_layers_cls"]
 
-    print("\n**** parameters from the pre-trained model ****")
-    print(f'layer_size = embsize: {model_configs["embsize"]} = d_hid: {model_configs["d_hid"]}, n_layers: {model_configs["nlayers"]}, nhead: {model_configs["nheads"]}')
-    print("**** parameters from the pre-trained model ****\n")
+    # print("\n**** parameters from the pre-trained model ****")
+    # print(f'layer_size = embsize: {model_configs["embsize"]} = d_hid: {model_configs["d_hid"]}, n_layers: {model_configs["nlayers"]}, nhead: {model_configs["nheads"]}')
+    # print("**** parameters from the pre-trained model ****\n")
 
     print("**** actual model parameters ****")
     print(f'layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
@@ -446,6 +449,12 @@ def prepare_dataloader(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ntokens = len(vocab)  # size of vocabulary
+
+print("\n\n **** load model parameters ****")
+print(f'lr = {lr}, batch_size = {batch_size}, epochs = {epochs}')
+print(f'ntokens = {ntokens}, layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
+print("**** load model parameters ****\n")
+
 model = TransformerModel(
     ntokens,
     embsize,
@@ -493,15 +502,148 @@ if config.load_model is not None:
 
 pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
 
-# Freeze all pre-decoder weights
-for name, para in model.named_parameters():
-    # print("-"*20)
+print("-"*20)
+print("-"*20)
+
+# 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
+
+# 列出要解冻的层的名称
+layers_to_unfreeze = [
+    # "transformer_encoder.layers.4.self_attn.Wqkv.weight",
+    # "transformer_encoder.layers.4.self_attn.Wqkv.bias",
+    # "transformer_encoder.layers.4.self_attn.out_proj.weight",
+    # "transformer_encoder.layers.4.self_attn.out_proj.bias",
+    # "transformer_encoder.layers.4.linear1.weight",
+    # "transformer_encoder.layers.4.linear1.bias",
+    # "transformer_encoder.layers.4.linear2.weight",
+    # "transformer_encoder.layers.4.linear2.bias",
+    # "transformer_encoder.layers.4.norm1.weight",
+    # "transformer_encoder.layers.4.norm1.bias",
+    # "transformer_encoder.layers.4.norm2.weight",
+    # "transformer_encoder.layers.4.norm2.bias",
+    # "transformer_encoder.layers.5.self_attn.Wqkv.weight",
+    # "transformer_encoder.layers.5.self_attn.Wqkv.bias",
+    # "transformer_encoder.layers.5.self_attn.out_proj.weight",
+    # "transformer_encoder.layers.5.self_attn.out_proj.bias",
+    # "transformer_encoder.layers.5.linear1.weight",
+    # "transformer_encoder.layers.5.linear1.bias",
+    # "transformer_encoder.layers.5.linear2.weight",
+    # "transformer_encoder.layers.5.linear2.bias",
+    # "transformer_encoder.layers.5.norm1.weight",
+    # "transformer_encoder.layers.5.norm1.bias",
+    # "transformer_encoder.layers.5.norm2.weight",
+    # "transformer_encoder.layers.5.norm2.bias",
+    # "transformer_encoder.layers.6.self_attn.Wqkv.weight",
+    # "transformer_encoder.layers.6.self_attn.Wqkv.bias",
+    # "transformer_encoder.layers.6.self_attn.out_proj.weight",
+    # "transformer_encoder.layers.6.self_attn.out_proj.bias",
+    # "transformer_encoder.layers.6.linear1.weight",
+    # "transformer_encoder.layers.6.linear1.bias",
+    # "transformer_encoder.layers.6.linear2.weight",
+    # "transformer_encoder.layers.6.linear2.bias",
+    # "transformer_encoder.layers.6.norm1.weight",
+    # "transformer_encoder.layers.6.norm1.bias",
+    # "transformer_encoder.layers.6.norm2.weight",
+    # "transformer_encoder.layers.6.norm2.bias",
+    # "transformer_encoder.layers.7.self_attn.Wqkv.weight",
+    # "transformer_encoder.layers.7.self_attn.Wqkv.bias",
+    # "transformer_encoder.layers.7.self_attn.out_proj.weight",
+    # "transformer_encoder.layers.7.self_attn.out_proj.bias",
+    # "transformer_encoder.layers.7.linear1.weight",
+    # "transformer_encoder.layers.7.linear1.bias",
+    # "transformer_encoder.layers.7.linear2.weight",
+    # "transformer_encoder.layers.7.linear2.bias",
+    # "transformer_encoder.layers.7.norm1.weight",
+    # "transformer_encoder.layers.7.norm1.bias",
+    # "transformer_encoder.layers.7.norm2.weight",
+    # "transformer_encoder.layers.7.norm2.bias",
+    "transformer_encoder.layers.8.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.8.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.8.self_attn.out_proj.weight",
+    "transformer_encoder.layers.8.self_attn.out_proj.bias",
+    "transformer_encoder.layers.8.linear1.weight",
+    "transformer_encoder.layers.8.linear1.bias",
+    "transformer_encoder.layers.8.linear2.weight",
+    "transformer_encoder.layers.8.linear2.bias",
+    "transformer_encoder.layers.8.norm1.weight",
+    "transformer_encoder.layers.8.norm1.bias",
+    "transformer_encoder.layers.8.norm2.weight",
+    "transformer_encoder.layers.8.norm2.bias",
+    "transformer_encoder.layers.9.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.9.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.9.self_attn.out_proj.weight",
+    "transformer_encoder.layers.9.self_attn.out_proj.bias",
+    "transformer_encoder.layers.9.linear1.weight",
+    "transformer_encoder.layers.9.linear1.bias",
+    "transformer_encoder.layers.9.linear2.weight",
+    "transformer_encoder.layers.9.linear2.bias",
+    "transformer_encoder.layers.9.norm1.weight",
+    "transformer_encoder.layers.9.norm1.bias",
+    "transformer_encoder.layers.9.norm2.weight",
+    "transformer_encoder.layers.9.norm2.bias",
+    "transformer_encoder.layers.10.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.10.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.10.self_attn.out_proj.weight",
+    "transformer_encoder.layers.10.self_attn.out_proj.bias",
+    "transformer_encoder.layers.10.linear1.weight",
+    "transformer_encoder.layers.10.linear1.bias",
+    "transformer_encoder.layers.10.linear2.weight",
+    "transformer_encoder.layers.10.linear2.bias",
+    "transformer_encoder.layers.10.norm1.weight",
+    "transformer_encoder.layers.10.norm1.bias",
+    "transformer_encoder.layers.10.norm2.weight",
+    "transformer_encoder.layers.10.norm2.bias",
+    "transformer_encoder.layers.11.self_attn.Wqkv.weight",
+    "transformer_encoder.layers.11.self_attn.Wqkv.bias",
+    "transformer_encoder.layers.11.self_attn.out_proj.weight",
+    "transformer_encoder.layers.11.self_attn.out_proj.bias",
+    "transformer_encoder.layers.11.linear1.weight",
+    "transformer_encoder.layers.11.linear1.bias",
+    "transformer_encoder.layers.11.linear2.weight",
+    "transformer_encoder.layers.11.linear2.bias",
+    "transformer_encoder.layers.11.norm1.weight",
+    "transformer_encoder.layers.11.norm1.bias",
+    "transformer_encoder.layers.11.norm2.weight",
+    "transformer_encoder.layers.11.norm2.bias",
+    "linear.weight",
+    "linear.bias",
+    "reg_decoder.fc1.weight",
+    "reg_decoder.fc1.bias",
+    "reg_decoder.bn1.weight",
+    "reg_decoder.bn1.bias",
+    "reg_decoder.fc2.weight",
+    "reg_decoder.fc2.bias",
+    "reg_decoder.bn2.weight",
+    "reg_decoder.bn2.bias",
+    "reg_decoder.fc4.weight",
+    "reg_decoder.fc4.bias"
+]
+
+for name, param in model.named_parameters():
     print(f"name: {name}")
 
-    # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-    if config.freeze and "encoder" in name:
-        print(f"freezing weights for: {name}")
-        para.requires_grad = False
+print("-"*20)
+print("-"*20)
+print("\n")
+
+# 初始化模型之后，修改参数的冻结状态
+for name, param in model.named_parameters():
+    # 默认情况下冻结所有参数
+    param.requires_grad = False
+    # 解冻指定的层
+    if name in layers_to_unfreeze:
+        param.requires_grad = True
+        print(f"Unfreezing layer: {name}")
+
+# # Freeze all pre-decoder weights
+# for name, para in model.named_parameters():
+#     # print("-"*20)
+#     print(f"name: {name}")
+
+#     # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
+#     if config.freeze and "encoder" in name:
+#         print(f"freezing weights for: {name}")
+#         para.requires_grad = False
 
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
 

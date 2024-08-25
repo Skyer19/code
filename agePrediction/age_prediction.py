@@ -582,21 +582,6 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         scaler.unscale_(optimizer)  # 还原梯度到原始尺度
         scaler.step(optimizer)  # 调用优化器的step方法
         scaler.update()  # 更新缩放因子
-
-        # with warnings.catch_warnings(record=True) as w:
-        #     warnings.filterwarnings("always")
-        #     torch.nn.utils.clip_grad_norm_(
-        #         model.parameters(),
-        #         1.0,
-        #         error_if_nonfinite=False if scaler.is_enabled() else True,
-        #     )
-        #     if len(w) > 0:
-        #         logger.warning(
-        #             f"Found infinite gradient. This may be caused by the gradient "
-        #             f"scaler. The current scale is {scaler.get_scale()}. This warning "
-        #             "can be ignored if no longer occurs after autoscaling of the scaler."
-        #         )
-    
         
         total_loss += loss.item() * len(input_gene_ids)
         total_num += len(input_gene_ids)

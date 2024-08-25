@@ -3,3 +3,7 @@ git_auto_update.sh
 .ipynb_checkpoints/
 save/
 wandb/
+
+record/
+
+trained_model/
