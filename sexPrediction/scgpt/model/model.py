@@ -156,7 +156,7 @@ class TransformerModel(nn.Module):
         #     explicit_zero_prob=explicit_zero_prob,
         #     use_batch_labels=use_batch_labels,
         # )
-        self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        # self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
         
         # if do_mvc:
         #     self.mvc_decoder = MVCDecoder(
@@ -179,7 +179,9 @@ class TransformerModel(nn.Module):
         # self.continous_decoder = ContinuousValueDeoder(d_model, nlayers)
         
         self.linear = nn.Linear(d_model, d_model) 
-        self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
+        
+        # self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
+        self.classified_decoder = ClassificationDecoder(d_model, n_cls,dropout = dropout)
 
         self.init_weights()
 
@@ -445,7 +447,7 @@ class TransformerModel(nn.Module):
         output["cell_emb"] = cell_emb
 
 
-        output["reg_output"] = self.reg_decoder(cell_emb)
+        output["classified_output"] = self.classified_decoder(cell_emb)
 
 
         # if CLS:
@@ -1169,5 +1171,72 @@ class RegressionEncoder(nn.Module):
         x = self.dropout(x)
         
         # x = self.activation3(self.bn3(self.fc3(x)))
+        x = self.fc4(x)
+        return x
+    
+
+class ClassificationDecoder(nn.Module):
+    def __init__(self, d_model, output_dim: int = 5, dropout: float = 0.3):
+        super(ClassificationDecoder, self).__init__()
+        
+        # 定义网络层
+        # self.fc1 = nn.Linear(d_model, d_model)
+        # self.bn1 = nn.BatchNorm1d(d_model)
+        # self.activation1 = nn.LeakyReLU()
+        
+        # self.fc2 = nn.Linear(d_model, d_model // 2)
+        # self.bn2 = nn.BatchNorm1d(d_model // 2)
+        # self.activation2 = nn.LeakyReLU()
+        
+        
+        # self.fc3 = nn.Linear(d_model, output_dim)
+        
+        # self.dropout = nn.Dropout(dropout)
+        
+        self.fc1 = nn.Linear(d_model, d_model)
+        self.bn1 = nn.BatchNorm1d(d_model)
+        self.activation1 = nn.LeakyReLU()
+        
+        # self.fc2 = nn.Linear(d_model, d_model // 2)
+        # self.bn2 = nn.BatchNorm1d(d_model // 2)
+        # self.activation2 = nn.LeakyReLU()
+
+        # self.fc3 = nn.Linear(d_model // 2, d_model // 4)
+        # self.bn3 = nn.BatchNorm1d(d_model // 4)
+        # self.activation3 = nn.LeakyReLU()        
+        
+        self.fc4 = nn.Linear(d_model, output_dim)
+        
+        self.dropout = nn.Dropout(dropout)
+        
+        # 调用权重初始化函数
+        self._init_weights()
+
+    def _init_weights(self):
+        # 使用Xavier初始化线性层的权重
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight)
+
+    def forward(self, x):
+        '''
+        x = self.activation1(self.bn1(self.fc1(x)))
+        x = self.dropout(x)
+        
+        x = self.activation2(self.bn2(self.fc2(x)))
+        x = self.dropout(x)
+        
+        x = self.fc3(x)
+        '''
+
+        x = self.activation1(self.bn1(self.fc1(x)))
+        x = self.dropout(x)
+        
+        # x = self.activation2(self.bn2(self.fc2(x)))
+        # x = self.dropout(x)
+
+        # x = self.activation3(self.bn3(self.fc3(x)))
+        # x = self.dropout(x)
+        
         x = self.fc4(x)
         return x
