@@ -181,7 +181,7 @@ class TransformerModel(nn.Module):
         self.linear = nn.Linear(d_model, d_model) 
         
         # self.reg_decoder = RegressionEncoder(d_model, dropout = dropout)
-        self.classified_decoder = ClassificationDecoder(d_model, n_cls,dropout = dropout)
+        self.classified_decoder = ClassificationDecoder(d_model, n_cls)
 
         self.init_weights()
 
