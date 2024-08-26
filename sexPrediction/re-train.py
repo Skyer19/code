@@ -69,7 +69,7 @@ os.environ["KMP_WARNINGS"] = "off"
 
 warnings.filterwarnings('ignore')
 
-os.environ["WANDB_MODE"]= "offline"
+# os.environ["WANDB_MODE"]= "offline"
 
 
 
@@ -83,7 +83,7 @@ hyperparameter_defaults = dict(
     load_model="../../pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=100, # 2 !!!!!!!!!!!!  test only
+    epochs=15, # 2 !!!!!!!!!!!!  test only
     lr=0.0001,
     batch_size=128,   # 128 !!!!!!!!!!!!  test only
 
