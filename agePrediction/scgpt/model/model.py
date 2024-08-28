@@ -1202,6 +1202,7 @@ class RegressionEncoder(nn.Module):
         super(RegressionEncoder, self).__init__()
         
         # 定义网络层
+        '''
         self.fc1 = nn.Linear(d_model, d_model)
         self.bn1 = nn.BatchNorm1d(d_model)
         self.activation1 = nn.LeakyReLU()
@@ -1212,6 +1213,14 @@ class RegressionEncoder(nn.Module):
         
         
         self.fc4 = nn.Linear(d_model // 2, output_dim)
+        
+        self.dropout = nn.Dropout(dropout)
+        '''
+        self.fc1 = nn.Linear(d_model, d_model)
+        self.bn1 = nn.BatchNorm1d(d_model)
+        self.activation1 = nn.LeakyReLU()
+                
+        self.fc4 = nn.Linear(d_model, output_dim)
         
         self.dropout = nn.Dropout(dropout)
         
@@ -1225,12 +1234,17 @@ class RegressionEncoder(nn.Module):
                 torch.nn.init.xavier_uniform_(m.weight)
 
     def forward(self, x):
+        '''
         x = self.activation1(self.bn1(self.fc1(x)))
         x = self.dropout(x)
         
         x = self.activation2(self.bn2(self.fc2(x)))
         x = self.dropout(x)
-        
-        # x = self.activation3(self.bn3(self.fc3(x)))
+
         x = self.fc4(x)
+        '''
+        x = self.activation1(self.bn1(self.fc1(x)))
+        x = self.dropout(x)
+        
+        x = self.fc4(x)       
         return x

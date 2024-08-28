@@ -12,7 +12,7 @@ print("Updated temp directory:", temp_dir)
 import sys
 import importlib
 
-new_path = '/data/mr423/project/ageClassification/'
+new_path = '/data/mr423/project/code/ageClassification/'
 if new_path not in sys.path:
     sys.path.insert(0, new_path)
 

@@ -8,7 +8,7 @@ print("Updated temp directory:", temp_dir)
 import sys
 import importlib
 
-new_path = '/data/mr423/project/codeage_prediction/'
+new_path = '/data/mr423/project/code/agePrediction/'
 if new_path not in sys.path:
     sys.path.insert(0, new_path)
 
@@ -73,7 +73,7 @@ hyperparameter_defaults = dict(
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=50,
+    epochs=30,
     lr=0.001,
     batch_size=128,
 
