@@ -99,8 +99,8 @@ class TransformerModel(nn.Module):
             # TODO: Correct handle the mask_value when using scaling
 
         # Batch Encoder
-        if use_batch_labels:
-            self.batch_encoder = BatchLabelEncoder(num_batch_labels, d_model)
+        # if use_batch_labels:
+        #     self.batch_encoder = BatchLabelEncoder(num_batch_labels, d_model)
 
         if domain_spec_batchnorm is True or domain_spec_batchnorm == "dsbn":
             use_affine = True if domain_spec_batchnorm == "do_affine" else False
@@ -139,6 +139,7 @@ class TransformerModel(nn.Module):
             use_batch_labels=use_batch_labels,
         )
         self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        
         if do_mvc:
             self.mvc_decoder = MVCDecoder(
                 d_model,
@@ -147,15 +148,15 @@ class TransformerModel(nn.Module):
                 use_batch_labels=use_batch_labels,
             )
 
-        if do_dab:
-            self.grad_reverse_discriminator = AdversarialDiscriminator(
-                d_model,
-                n_cls=num_batch_labels,
-                reverse_grad=True,
-            )
+        # if do_dab: #True
+        #     self.grad_reverse_discriminator = AdversarialDiscriminator(
+        #         d_model,
+        #         n_cls=num_batch_labels,
+        #         reverse_grad=True,
+        #     )
 
         self.sim = Similarity(temp=0.5)  # TODO: auto set temp
-        self.creterion_cce = nn.CrossEntropyLoss()
+        # self.creterion_cce = nn.CrossEntropyLoss()
 
         self.init_weights()
 
@@ -230,7 +231,7 @@ class TransformerModel(nn.Module):
                 "batch_labels should only be provided when `self.use_batch_labels`"
                 " or `self.domain_spec_batchnorm` is True"
             )
-
+    '''
     def generate(
         self,
         cell_emb: Tensor,
@@ -310,6 +311,7 @@ class TransformerModel(nn.Module):
         output = mlm_output["pred"]  # (batch, seq_len)
 
         return output  # (batch, seq_len)
+    '''
 
     def forward(
         self,
@@ -342,25 +344,33 @@ class TransformerModel(nn.Module):
         Returns:
             dict of output Tensors.
         """
+
+        print(f"CLS: {CLS}, CCE: {CCE}, MVC: {MVC}, ECS: {ECS}, do_sample: {do_sample}")
         transformer_output = self._encode(
             src, values, src_key_padding_mask, batch_labels
         )
-        if self.use_batch_labels:
-            batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
+        # if self.use_batch_labels:
+        #     batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
 
         output = {}
-        mlm_output = self.decoder(
-            transformer_output
-            if not self.use_batch_labels
-            else torch.cat(
-                [
-                    transformer_output,
-                    batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
-                ],
-                dim=2,
-            ),
-            # else transformer_output + batch_emb.unsqueeze(1),
-        )
+
+        # mlm_output = self.decoder(
+        #     transformer_output
+        #     if not self.use_batch_labels
+        #     else torch.cat(
+        #         [
+        #             transformer_output,
+        #             batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
+        #         ],
+        #         dim=2,
+        #     ),
+        #     # else transformer_output + batch_emb.unsqueeze(1),
+        # )
+        
+        
+        # self.decoder = ExprDecoder
+        mlm_output = self.decoder(transformer_output)
+
         if self.explicit_zero_prob and do_sample:
             bernoulli = Bernoulli(probs=mlm_output["zero_probs"])
             output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
@@ -373,48 +383,53 @@ class TransformerModel(nn.Module):
         cell_emb = self._get_cell_emb_from_layer(transformer_output, values)
         output["cell_emb"] = cell_emb
 
-        if CLS:
-            output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
+        # if CLS:
+        #     output["cls_output"] = self.cls_decoder(cell_emb)  # (batch, n_cls)
         
-        if CCE:
-            cell1 = cell_emb
-            transformer_output2 = self._encode(
-                src, values, src_key_padding_mask, batch_labels
-            )
-            cell2 = self._get_cell_emb_from_layer(transformer_output2)
+        '''
+        “对比性细胞嵌入目标” 是一种利用对比学习的思想，通过优化模型，使得相似的细胞在嵌入空间中靠近，不相似的细胞分离
+        '''
+        # if CCE:
+        #     cell1 = cell_emb
+        #     transformer_output2 = self._encode(
+        #         src, values, src_key_padding_mask, batch_labels
+        #     )
+        #     cell2 = self._get_cell_emb_from_layer(transformer_output2)
 
-            # Gather embeddings from all devices if distributed training
-            if dist.is_initialized() and self.training:
-                cls1_list = [
-                    torch.zeros_like(cell1) for _ in range(dist.get_world_size())
-                ]
-                cls2_list = [
-                    torch.zeros_like(cell2) for _ in range(dist.get_world_size())
-                ]
-                dist.all_gather(tensor_list=cls1_list, tensor=cell1.contiguous())
-                dist.all_gather(tensor_list=cls2_list, tensor=cell2.contiguous())
+        #     # Gather embeddings from all devices if distributed training
+        #     if dist.is_initialized() and self.training:
+        #         cls1_list = [
+        #             torch.zeros_like(cell1) for _ in range(dist.get_world_size())
+        #         ]
+        #         cls2_list = [
+        #             torch.zeros_like(cell2) for _ in range(dist.get_world_size())
+        #         ]
+        #         dist.all_gather(tensor_list=cls1_list, tensor=cell1.contiguous())
+        #         dist.all_gather(tensor_list=cls2_list, tensor=cell2.contiguous())
 
-                # NOTE: all_gather results have no gradients, so replace the item
-                # of the current rank with the original tensor to keep gradients.
-                # See https://github.com/princeton-nlp/SimCSE/blob/main/simcse/models.py#L186
-                cls1_list[dist.get_rank()] = cell1
-                cls2_list[dist.get_rank()] = cell2
+        #         # NOTE: all_gather results have no gradients, so replace the item
+        #         # of the current rank with the original tensor to keep gradients.
+        #         # See https://github.com/princeton-nlp/SimCSE/blob/main/simcse/models.py#L186
+        #         cls1_list[dist.get_rank()] = cell1
+        #         cls2_list[dist.get_rank()] = cell2
 
-                cell1 = torch.cat(cls1_list, dim=0)
-                cell2 = torch.cat(cls2_list, dim=0)
-            # TODO: should detach the second run cls2? Can have a try
-            cos_sim = self.sim(cell1.unsqueeze(1), cell2.unsqueeze(0))  # (batch, batch)
-            labels = torch.arange(cos_sim.size(0)).long().to(cell1.device)
-            output["loss_cce"] = self.creterion_cce(cos_sim, labels)
+        #         cell1 = torch.cat(cls1_list, dim=0)
+        #         cell2 = torch.cat(cls2_list, dim=0)
+        #     # TODO: should detach the second run cls2? Can have a try
+        #     cos_sim = self.sim(cell1.unsqueeze(1), cell2.unsqueeze(0))  # (batch, batch)
+        #     labels = torch.arange(cos_sim.size(0)).long().to(cell1.device)
+        #     output["loss_cce"] = self.creterion_cce(cos_sim, labels)
         
         if MVC:
-            mvc_output = self.mvc_decoder(
-                cell_emb
-                if not self.use_batch_labels
-                else torch.cat([cell_emb, batch_emb], dim=1),
-                # else cell_emb + batch_emb,
-                self.cur_gene_token_embs,
-            )
+            # mvc_output = self.mvc_decoder(
+            #     cell_emb
+            #     if not self.use_batch_labels
+            #     else torch.cat([cell_emb, batch_emb], dim=1),
+            #     # else cell_emb + batch_emb,
+            #     self.cur_gene_token_embs,
+            # )
+            mvc_output = self.mvc_decoder(cell_emb, self.cur_gene_token_embs,)
+
             if self.explicit_zero_prob and do_sample:
                 bernoulli = Bernoulli(probs=mvc_output["zero_probs"])
                 output["mvc_output"] = bernoulli.sample() * mvc_output["pred"]
@@ -438,8 +453,10 @@ class TransformerModel(nn.Module):
 
             output["loss_ecs"] = torch.mean(1 - (cos_sim - self.ecs_threshold) ** 2)
 
-        if self.do_dab:
-            output["dab_output"] = self.grad_reverse_discriminator(cell_emb)
+        # if self.do_dab: #True
+        #     output["dab_output"] = self.grad_reverse_discriminator(cell_emb)
+        
+        print(output.keys())
 
         return output
 
