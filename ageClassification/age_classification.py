@@ -63,7 +63,7 @@ sc.set_figure_params(figsize=(6, 6))
 os.environ["KMP_WARNINGS"] = "off"
 warnings.filterwarnings('ignore')
 
-# os.environ["WANDB_MODE"]= "offline"
+os.environ["WANDB_MODE"]= "offline"
 
 
 
@@ -198,6 +198,9 @@ scg.utils.add_file_handler(logger, save_dir / "run.log")
 adata = sc.read("/data/mr423/project/data/3-OLINK_data_train_withOutlier_all.h5ad")
 adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_test_withOutlier_all.h5ad")
 
+# adata = sc.read("/data/mr423/project/data/3-OLINK_data_test_withOutlier_all.h5ad")
+# adata_test = sc.read("/data/mr423/project/data/3-OLINK_data_test_withOutlier_all.h5ad")
+
 print(adata.shape)
 print(adata_test.shape)
 
@@ -273,9 +276,9 @@ if config.load_model is not None:
     print(f'layer_size = embsize: {model_configs["embsize"]} = d_hid: {model_configs["d_hid"]}, n_layers: {model_configs["nlayers"]}, nhead: {model_configs["nheads"]}')
     print("**** parameters from the pre-trained model ****\n")
 
-    print("**** actual model parameters ****")
-    print(f'layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
-    print("**** actual model parameters ****\n")
+print("**** actual model parameters ****")
+print(f'layer_size = embsize: {embsize} = d_hid: {d_hid}, n_layers: {nlayers}, nhead: {nhead}')
+print("**** actual model parameters ****\n")
 
 # set up the preprocessor, use the args to config the workflow
 preprocessor = Preprocessor(
@@ -327,9 +330,10 @@ ageGroup_labels = np.array(ageGroup_labels)
     train_ageGroup,
     valid_ageGroup,
 ) = train_test_split(
-    all_counts, ageGroup_labels, test_size=0.2, shuffle=True
+    all_counts, ageGroup_labels, test_size=0.2, shuffle=False
 )
 
+print("train_data: ",train_data)
 
 if config.load_model is None:
     vocab = Vocab(
@@ -372,6 +376,7 @@ logger.info(
     f"\n\t feature length: {tokenized_valid['genes'].shape[1]}"
 )
 
+print(tokenized_train)
 
 def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
     input_gene_ids_train, input_gene_ids_valid = (

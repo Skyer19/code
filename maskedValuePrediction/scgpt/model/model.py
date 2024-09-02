@@ -138,7 +138,7 @@ class TransformerModel(nn.Module):
             explicit_zero_prob=explicit_zero_prob,
             use_batch_labels=use_batch_labels,
         )
-        self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
+        # self.cls_decoder = ClsDecoder(d_model, n_cls, nlayers=nlayers_cls)
         
         if do_mvc:
             self.mvc_decoder = MVCDecoder(
@@ -155,7 +155,7 @@ class TransformerModel(nn.Module):
         #         reverse_grad=True,
         #     )
 
-        self.sim = Similarity(temp=0.5)  # TODO: auto set temp
+        # self.sim = Similarity(temp=0.5)  # TODO: auto set temp
         # self.creterion_cce = nn.CrossEntropyLoss()
 
         self.init_weights()
@@ -347,7 +347,8 @@ class TransformerModel(nn.Module):
             dict of output Tensors.
         """
 
-        print(f"MVC: {MVC}")
+        # print(f"MVC: {MVC}")
+
         transformer_output = self._encode(
             src, values, src_key_padding_mask, batch_labels
         )
@@ -381,7 +382,7 @@ class TransformerModel(nn.Module):
         
         output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
 
-        print(f'output["mlm_output"]: {output["mlm_output"].shape}')
+        # print(f'output["mlm_output"]: {output["mlm_output"].shape}')
         
         if self.explicit_zero_prob:
             output["mlm_zero_probs"] = mlm_output["zero_probs"]
@@ -469,7 +470,7 @@ class TransformerModel(nn.Module):
         # if self.do_dab: #True
         #     output["dab_output"] = self.grad_reverse_discriminator(cell_emb)
         
-        print(output.keys(),"\n")
+        # print(output.keys(),"\n")
 
         return output
 
@@ -865,18 +866,18 @@ class BatchLabelEncoder(nn.Module):
         return x
 
 
-class Similarity(nn.Module):
-    """
-    Dot product or cosine similarity
-    """
+# class Similarity(nn.Module):
+#     """
+#     Dot product or cosine similarity
+#     """
 
-    def __init__(self, temp):
-        super().__init__()
-        self.temp = temp
-        self.cos = nn.CosineSimilarity(dim=-1)
+#     def __init__(self, temp):
+#         super().__init__()
+#         self.temp = temp
+#         self.cos = nn.CosineSimilarity(dim=-1)
 
-    def forward(self, x, y):
-        return self.cos(x, y) / self.temp
+#     def forward(self, x, y):
+#         return self.cos(x, y) / self.temp
 
 
 class ExprDecoder(nn.Module):
