@@ -347,7 +347,7 @@ class TransformerModel(nn.Module):
             dict of output Tensors.
         """
 
-        print(f"MVC: {MVC}, ECS: {ECS}, do_sample: {do_sample}")
+        print(f"MVC: {MVC}")
         transformer_output = self._encode(
             src, values, src_key_padding_mask, batch_labels
         )
@@ -378,7 +378,10 @@ class TransformerModel(nn.Module):
         #     output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
         # else:
         #     output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
+        
         output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
+
+        print(f'output["mlm_output"]: {output["mlm_output"].shape}')
         
         if self.explicit_zero_prob:
             output["mlm_zero_probs"] = mlm_output["zero_probs"]
@@ -448,25 +451,25 @@ class TransformerModel(nn.Module):
             if self.explicit_zero_prob:
                 output["mvc_zero_probs"] = mvc_output["zero_probs"]
         
-        if ECS:
-            # Here using customized cosine similarity instead of F.cosine_similarity
-            # to avoid the pytorch issue of similarity larger than 1.0, pytorch # 78064
-            # normalize the embedding
-            cell_emb_normed = F.normalize(cell_emb, p=2, dim=1)
-            cos_sim = torch.mm(cell_emb_normed, cell_emb_normed.t())  # (batch, batch)
+        # if ECS: # 优化细胞/个体之间 embedding 之间的相似度
+        #     # Here using customized cosine similarity instead of F.cosine_similarity
+        #     # to avoid the pytorch issue of similarity larger than 1.0, pytorch # 78064
+        #     # normalize the embedding
+        #     cell_emb_normed = F.normalize(cell_emb, p=2, dim=1) # 使用 F.normalize 函数对细胞嵌入 cell_emb 进行 L2 范数 规范化
+        #     cos_sim = torch.mm(cell_emb_normed, cell_emb_normed.t())  # (batch, batch) # 计算细胞嵌入的余弦相似度矩阵， 其中每个元素 cos_sim[i, j] 表示第 i 个细胞和第 j 个细胞的相似度
 
-            # mask out diagnal elements
-            mask = torch.eye(cos_sim.size(0)).bool().to(cos_sim.device)
-            cos_sim = cos_sim.masked_fill(mask, 0.0)
-            # only optimize positive similarities
-            cos_sim = F.relu(cos_sim)
+        #     # mask out diagnal elements mask 是一个布尔掩码，对角线元素为 True，非对角线元素为 False， 因为对角线上的元素表示同一细胞与自己的相似度（即相似度为 1），这些值对优化没有意义，因此被掩盖。
+        #     mask = torch.eye(cos_sim.size(0)).bool().to(cos_sim.device)
+        #     cos_sim = cos_sim.masked_fill(mask, 0.0)
+        #     # only optimize positive similarities
+        #     cos_sim = F.relu(cos_sim)
 
-            output["loss_ecs"] = torch.mean(1 - (cos_sim - self.ecs_threshold) ** 2)
+        #     output["loss_ecs"] = torch.mean(1 - (cos_sim - self.ecs_threshold) ** 2) # 将余弦相似度与一个阈值 self.ecs_threshold 进行比较，self.ecs_threshold 是一个预定义的常量，用于控制相似度的基准
 
         # if self.do_dab: #True
         #     output["dab_output"] = self.grad_reverse_discriminator(cell_emb)
         
-        print(output.keys())
+        print(output.keys(),"\n")
 
         return output
 
@@ -892,6 +895,7 @@ class ExprDecoder(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(d_model, 1),
         )
+        
         self.explicit_zero_prob = explicit_zero_prob
         if explicit_zero_prob:
             self.zero_logit = nn.Sequential(
@@ -908,9 +912,11 @@ class ExprDecoder(nn.Module):
 
         if not self.explicit_zero_prob:
             return dict(pred=pred_value)
+       
         zero_logits = self.zero_logit(x).squeeze(-1)  # (batch, seq_len)
         zero_probs = torch.sigmoid(zero_logits)
         return dict(pred=pred_value, zero_probs=zero_probs)
+        
         # TODO: note that the return currently is only for training. Since decoder
         # is not used in the test setting for the integration task, the eval/inference
         # logic is not implemented yet. However, remember to implement it when
@@ -979,20 +985,24 @@ class MVCDecoder(nn.Module):
             self.gene2query = nn.Linear(d_model, d_model)
             self.query_activation = query_activation()
             self.W = nn.Linear(d_model, d_in, bias=False)
+            
             if explicit_zero_prob:  # by default, gene-wise prob rate
                 self.W_zero_logit = nn.Linear(d_model, d_in)
+        
         elif arch_style == "concat query":
             self.gene2query = nn.Linear(d_model, 64)
             self.query_activation = query_activation()
             self.fc1 = nn.Linear(d_model + 64, 64)
             self.hidden_activation = hidden_activation()
             self.fc2 = nn.Linear(64, 1)
+        
         elif arch_style == "sum query":
             self.gene2query = nn.Linear(d_model, d_model)
             self.query_activation = query_activation()
             self.fc1 = nn.Linear(d_model, 64)
             self.hidden_activation = hidden_activation()
             self.fc2 = nn.Linear(64, 1)
+        
         else:
             raise ValueError(f"Unknown arch_style: {arch_style}")
 
@@ -1012,30 +1022,38 @@ class MVCDecoder(nn.Module):
         if self.arch_style in ["inner product", "inner product, detach"]:
             query_vecs = self.query_activation(self.gene2query(gene_embs))
             cell_emb = cell_emb.unsqueeze(2)  # (batch, embsize, 1)
+            
             # the pred gene expr values, # (batch, seq_len)
             pred_value = torch.bmm(self.W(query_vecs), cell_emb).squeeze(2)
+            
             if not self.explicit_zero_prob:
                 return dict(pred=pred_value)
+            
             # zero logits need to based on the cell_emb, because of input exprs
             zero_logits = torch.bmm(self.W_zero_logit(query_vecs), cell_emb).squeeze(2)
             zero_probs = torch.sigmoid(zero_logits)
             return dict(pred=pred_value, zero_probs=zero_probs)
+        
         elif self.arch_style == "concat query":
             query_vecs = self.query_activation(self.gene2query(gene_embs))
+            
             # expand cell_emb to (batch, seq_len, embsize)
             cell_emb = cell_emb.unsqueeze(1).expand(-1, gene_embs.shape[1], -1)
 
             h = self.hidden_activation(
                 self.fc1(torch.cat([cell_emb, query_vecs], dim=2))
             )
+            
             if self.explicit_zero_prob:
                 raise NotImplementedError
             return self.fc2(h).squeeze(2)  # (batch, seq_len)
+        
         elif self.arch_style == "sum query":
             query_vecs = self.query_activation(self.gene2query(gene_embs))
             cell_emb = cell_emb.unsqueeze(1)
 
             h = self.hidden_activation(self.fc1(cell_emb + query_vecs))
+            
             if self.explicit_zero_prob:
                 raise NotImplementedError
             return self.fc2(h).squeeze(2)  # (batch, seq_len)

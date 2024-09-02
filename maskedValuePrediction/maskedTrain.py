@@ -495,7 +495,8 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 batch_labels = None,
 
                 MVC=config.GEPC,
-                ECS=config.ecs_thres > 0,
+                # ECS=config.ecs_thres > 0,
+                ECS = False,
                 # do_sample 的作用是在模型预测时引入随机性，通过对模型输出的零概率部分进行采样
                 do_sample = False,
             )
@@ -503,7 +504,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
             masked_positions = input_values.eq(mask_value)  # the postions to predict
             
 
-
+            # MLM: 使用 ExprDecoder， 直接提取输入嵌入中的核心信息
             loss = loss_mlm = criterion(
                 output_dict["mlm_output"], target_values, masked_positions
             )
@@ -517,7 +518,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 metrics_to_log.update({"train/nzlp": loss_zero_log_prob.item()})
 
 
-
+            # GEPC: 使用 MVCDecoder， 能够捕捉细胞和基因嵌入之间的复杂交互信息
             if config.GEPC: 
                 loss_gepc = criterion(
                     output_dict["mvc_output"], target_values, masked_positions
@@ -535,10 +536,10 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 )
 
 
-            if config.ecs_thres > 0:
-                loss_ecs = 10 * output_dict["loss_ecs"]
-                loss = loss + loss_ecs
-                metrics_to_log.update({"train/ecs": loss_ecs.item()})
+            # if config.ecs_thres > 0:
+            #     loss_ecs = 10 * output_dict["loss_ecs"]
+            #     loss = loss + loss_ecs
+            #     metrics_to_log.update({"train/ecs": loss_ecs.item()})
     
             # loss_dab = criterion_dab(output_dict["dab_output"], batch_labels)
             # loss = loss + config.dab_weight * loss_dab
@@ -547,6 +548,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         model.zero_grad()
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
+
         with warnings.catch_warnings(record=True) as w:
             warnings.filterwarnings("always")
             torch.nn.utils.clip_grad_norm_(
@@ -566,6 +568,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         wandb.log(metrics_to_log)
 
         with torch.no_grad():
+            # 用于计算模型预测值与实际目标值之间的相对误差，并且只在 mask 指定的部分进行计算
             mre = masked_relative_error(
                 output_dict["mlm_output"], target_values, masked_positions
             )
@@ -579,6 +582,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
         if batch % log_interval == 0 and batch > 0:
             lr = scheduler.get_last_lr()[0]
             ms_per_batch = (time.time() - start_time) * 1000 / log_interval
+            
             cur_loss = total_loss / log_interval
             cur_mse = total_mlm / log_interval
             cur_gepc = total_gepc / log_interval if config.GEPC else 0.0
@@ -591,9 +595,11 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 + (f"gepc {cur_gepc:5.2f} |" if config.GEPC else "")
             )
             total_loss = 0
-            total_mse = 0
+            total_mlm = 0
             total_gepc = 0
+
             total_error = 0
+
             start_time = time.time()
 
 
@@ -664,12 +670,13 @@ def evaluate(model: nn.Module, loader: DataLoader) -> float:
 
 
 
-
+'''
 def eval_testdata(
     model: nn.Module,
     adata_t: AnnData,
     include_types: List[str] = ["cls"],
 ) -> Optional[Dict]:
+    
     """evaluate the model on test dataset of adata_t"""
     model.eval()
 
@@ -758,7 +765,7 @@ def eval_testdata(
 
     if len(include_types) == 1:
         return results
-
+'''
 
 
 
@@ -809,37 +816,37 @@ for epoch in range(1, 2):
         best_model_epoch = epoch
         logger.info(f"Best model with score {best_val_loss:5.4f}")
 
-    if epoch % config.save_eval_interval == 0 or epoch == config.epochs:
-        logger.info(f"Saving model to {save_dir}")
-        torch.save(best_model.state_dict(), save_dir / f"model_e{best_model_epoch}.pt")
+    # if epoch % config.save_eval_interval == 0 or epoch == config.epochs:
+    #     logger.info(f"Saving model to {save_dir}")
+    #     torch.save(best_model.state_dict(), save_dir / f"model_e{best_model_epoch}.pt")
 
-        # eval on testdata
-        results = eval_testdata(
-            best_model,
-            # adata_t=adata_sorted if per_seq_batch_sample else adata,
-            adata_t= adata,
-            include_types=["cls"],
-        )
-        results["batch_umap"].savefig(
-            save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png", dpi=300
-        )
+    #     # eval on testdata
+    #     results = eval_testdata(
+    #         best_model,
+    #         # adata_t=adata_sorted if per_seq_batch_sample else adata,
+    #         adata_t= adata,
+    #         include_types=["cls"],
+    #     )
+    #     results["batch_umap"].savefig(
+    #         save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png", dpi=300
+    #     )
 
-        results["celltype_umap"].savefig(
-            save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png", dpi=300
-        )
-        metrics_to_log = {"test/" + k: v for k, v in results.items()}
-        metrics_to_log["test/batch_umap"] = wandb.Image(
-            str(save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png"),
-            caption=f"celltype avg_bio epoch {best_model_epoch}",
-        )
+    #     results["celltype_umap"].savefig(
+    #         save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png", dpi=300
+    #     )
+    #     metrics_to_log = {"test/" + k: v for k, v in results.items()}
+    #     metrics_to_log["test/batch_umap"] = wandb.Image(
+    #         str(save_dir / f"embeddings_batch_umap[cls]_e{best_model_epoch}.png"),
+    #         caption=f"celltype avg_bio epoch {best_model_epoch}",
+    #     )
 
-        metrics_to_log["test/celltype_umap"] = wandb.Image(
-            str(save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png"),
-            caption=f"celltype avg_bio epoch {best_model_epoch}",
-        )
-        metrics_to_log["test/best_model_epoch"] = best_model_epoch
-        wandb.log(metrics_to_log)
-        wandb.log({"avg_bio": results.get("avg_bio", 0.0)})
+    #     metrics_to_log["test/celltype_umap"] = wandb.Image(
+    #         str(save_dir / f"embeddings_celltype_umap[cls]_e{best_model_epoch}.png"),
+    #         caption=f"celltype avg_bio epoch {best_model_epoch}",
+    #     )
+    #     metrics_to_log["test/best_model_epoch"] = best_model_epoch
+    #     wandb.log(metrics_to_log)
+    #     wandb.log({"avg_bio": results.get("avg_bio", 0.0)})
 
     scheduler.step()
 
