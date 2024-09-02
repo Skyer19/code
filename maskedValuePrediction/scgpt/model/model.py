@@ -319,8 +319,8 @@ class TransformerModel(nn.Module):
         values: Tensor,
         src_key_padding_mask: Tensor,
         batch_labels: Optional[Tensor] = None,
-        CLS: bool = False,
-        CCE: bool = False,
+        # CLS: bool = False,
+        # CCE: bool = False,
         MVC: bool = False,
         ECS: bool = False,
         do_sample: bool = False,
@@ -332,10 +332,12 @@ class TransformerModel(nn.Module):
             src_key_padding_mask (:obj:`Tensor`): mask for src, shape [batch_size,
                 seq_len]
             batch_labels (:obj:`Tensor`): batch labels, shape [batch_size]
-            CLS (:obj:`bool`): if True, return the celltype classification objective
-                (CLS) output
-            CCE (:obj:`bool`): if True, return the contrastive cell embedding objective
-                (CCE) output
+
+            # CLS (:obj:`bool`): if True, return the celltype classification objective
+            #     (CLS) output
+            # CCE (:obj:`bool`): if True, return the contrastive cell embedding objective
+            #     (CCE) output
+
             MVC (:obj:`bool`): if True, return the masked value prediction for cell
                 embedding MVC output
             ECS (:obj:`bool`): if True, return the elastic cell similarity objective
@@ -345,7 +347,7 @@ class TransformerModel(nn.Module):
             dict of output Tensors.
         """
 
-        print(f"CLS: {CLS}, CCE: {CCE}, MVC: {MVC}, ECS: {ECS}, do_sample: {do_sample}")
+        print(f"MVC: {MVC}, ECS: {ECS}, do_sample: {do_sample}")
         transformer_output = self._encode(
             src, values, src_key_padding_mask, batch_labels
         )
@@ -371,14 +373,17 @@ class TransformerModel(nn.Module):
         # self.decoder = ExprDecoder
         mlm_output = self.decoder(transformer_output)
 
-        if self.explicit_zero_prob and do_sample:
-            bernoulli = Bernoulli(probs=mlm_output["zero_probs"])
-            output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
-        else:
-            output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
+        # if self.explicit_zero_prob and do_sample:
+        #     bernoulli = Bernoulli(probs=mlm_output["zero_probs"])
+        #     output["mlm_output"] = bernoulli.sample() * mlm_output["pred"]
+        # else:
+        #     output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
+        output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
         
         if self.explicit_zero_prob:
             output["mlm_zero_probs"] = mlm_output["zero_probs"]
+
+    
 
         cell_emb = self._get_cell_emb_from_layer(transformer_output, values)
         output["cell_emb"] = cell_emb
@@ -388,7 +393,6 @@ class TransformerModel(nn.Module):
         
         '''
         “对比性细胞嵌入目标” 是一种利用对比学习的思想，通过优化模型，使得相似的细胞在嵌入空间中靠近，不相似的细胞分离
-        '''
         # if CCE:
         #     cell1 = cell_emb
         #     transformer_output2 = self._encode(
@@ -419,7 +423,9 @@ class TransformerModel(nn.Module):
         #     cos_sim = self.sim(cell1.unsqueeze(1), cell2.unsqueeze(0))  # (batch, batch)
         #     labels = torch.arange(cos_sim.size(0)).long().to(cell1.device)
         #     output["loss_cce"] = self.creterion_cce(cos_sim, labels)
-        
+        '''  
+
+
         if MVC:
             # mvc_output = self.mvc_decoder(
             #     cell_emb
@@ -430,11 +436,15 @@ class TransformerModel(nn.Module):
             # )
             mvc_output = self.mvc_decoder(cell_emb, self.cur_gene_token_embs,)
 
-            if self.explicit_zero_prob and do_sample:
-                bernoulli = Bernoulli(probs=mvc_output["zero_probs"])
-                output["mvc_output"] = bernoulli.sample() * mvc_output["pred"]
-            else:
-                output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
+            # if self.explicit_zero_prob and do_sample:
+            #     bernoulli = Bernoulli(probs=mvc_output["zero_probs"])
+            #     output["mvc_output"] = bernoulli.sample() * mvc_output["pred"]
+            # else:
+            #     output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
+            
+            output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
+            
+            
             if self.explicit_zero_prob:
                 output["mvc_zero_probs"] = mvc_output["zero_probs"]
         

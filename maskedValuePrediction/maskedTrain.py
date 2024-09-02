@@ -120,8 +120,9 @@ n_input_bins = config.n_bins
 
 n_hvg = 1200  # number of highly variable genes
 max_seq_len = n_hvg + 1
-per_seq_batch_sample = True
-DSBN = True  # Domain-spec batchnorm
+# per_seq_batch_sample = True
+per_seq_batch_sample = False
+DSBN = False  # Domain-spec batchnorm
 explicit_zero_prob = True  # whether explicit bernoulli for zeros
 
 
@@ -212,9 +213,9 @@ preprocessor(adata, batch_key="str_batch" if dataset_name != "heart_cell" else N
 
 
 
-if per_seq_batch_sample:
-    # sort the adata by batch_id in advance
-    adata_sorted = adata[adata.obs["batch_id"].argsort()].copy()
+# if per_seq_batch_sample:
+#     # sort the adata by batch_id in advance
+#     adata_sorted = adata[adata.obs["batch_id"].argsort()].copy()
 
 
 
@@ -235,8 +236,8 @@ num_batch_types = len(set(batch_ids))
 batch_ids = np.array(batch_ids)
 
 (
-    train_data,
-    valid_data,
+    train_data, # gene level
+    valid_data, # gene level
     train_celltype_labels,
     valid_celltype_labels,
     train_batch_labels,
@@ -244,6 +245,9 @@ batch_ids = np.array(batch_ids)
 ) = train_test_split(
     all_counts, celltypes_labels, batch_ids, test_size=0.1, shuffle=True
 )
+
+
+print("train_data: ",train_data)
 
 
 
@@ -286,7 +290,14 @@ logger.info(
     f"\n\t feature length: {tokenized_valid['genes'].shape[1]}"
 )
 
+'''
+tokenized_train: tokenized_train['genes'], tokenized_train['values']
+tokenized_valid: tokenized_valid['genes'], tokenized_valid['values']
 
+['genes'] in id format
+['values'] in bins format
+
+'''
 
 def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
     masked_values_train = random_mask_value(
@@ -336,7 +347,7 @@ def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
     train_data_pt = {
         "gene_ids": input_gene_ids_train,
         "values": input_values_train,  # masked value
-        "target_values": target_values_train,
+        "target_values": target_values_train, # without masked value
         "batch_labels": tensor_batch_labels_train,
     }
     valid_data_pt = {
@@ -372,26 +383,26 @@ def prepare_dataloader(
 ) -> DataLoader:
     dataset = SeqDataset(data_pt)
 
-    if per_seq_batch_sample: ## True
-        # find the indices of samples in each seq batch
-        subsets = []
-        batch_labels_array = data_pt["batch_labels"].numpy()
-        for batch_label in np.unique(batch_labels_array):
-            batch_indices = np.where(batch_labels_array == batch_label)[0].tolist()
-            subsets.append(batch_indices)
-        data_loader = DataLoader(
-            dataset=dataset,
-            batch_sampler=SubsetsBatchSampler(
-                subsets,
-                batch_size,
-                intra_subset_shuffle=intra_domain_shuffle,
-                inter_subset_shuffle=shuffle,
-                drop_last=drop_last,
-            ),
-            num_workers=num_workers,
-            pin_memory=True,
-        )
-        return data_loader
+    # if per_seq_batch_sample: ## True
+    #     # find the indices of samples in each seq batch
+    #     subsets = []
+    #     batch_labels_array = data_pt["batch_labels"].numpy()
+    #     for batch_label in np.unique(batch_labels_array):
+    #         batch_indices = np.where(batch_labels_array == batch_label)[0].tolist()
+    #         subsets.append(batch_indices)
+    #     data_loader = DataLoader(
+    #         dataset=dataset,
+    #         batch_sampler=SubsetsBatchSampler(
+    #             subsets,
+    #             batch_size,
+    #             intra_subset_shuffle=intra_domain_shuffle,
+    #             inter_subset_shuffle=shuffle,
+    #             drop_last=drop_last,
+    #         ),
+    #         num_workers=num_workers,
+    #         pin_memory=True,
+    #     )
+    #     return data_loader
 
     data_loader = DataLoader(
         dataset=dataset,
@@ -426,8 +437,10 @@ model = TransformerModel(
     use_batch_labels=False,
     num_batch_labels=None,
     # domain_spec_batchnorm=DSBN,
-    domain_spec_batchnorm='batchnorm', # use batch norm, we can also choose not use the norm
+    domain_spec_batchnorm=False, # use batch norm, we can also choose not use the norm
+    
     n_input_bins=n_input_bins,
+
     ecs_threshold=config.ecs_thres, # 0.8
     explicit_zero_prob=explicit_zero_prob, # true
     use_fast_transformer=config.fast_transformer, # True
@@ -459,7 +472,7 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     Train the model for one epoch.
     """
     model.train()
-    total_loss, total_mse, total_gepc = 0.0, 0.0, 0.0
+    total_loss, total_mlm, total_gepc = 0.0, 0.0, 0.0
     total_error = 0.0
     log_interval = config.log_interval
     start_time = time.time()
@@ -468,8 +481,8 @@ def train(model: nn.Module, loader: DataLoader) -> None:
     for batch, batch_data in enumerate(loader):
         input_gene_ids = batch_data["gene_ids"].to(device)
         input_values = batch_data["values"].to(device)  # masked value
-        target_values = batch_data["target_values"].to(device)
-        batch_labels = batch_data["batch_labels"].to(device)
+        target_values = batch_data["target_values"].to(device) # without masked value
+        # batch_labels = batch_data["batch_labels"].to(device)
 
         src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
         
@@ -478,21 +491,23 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 input_gene_ids,
                 input_values,
                 src_key_padding_mask=src_key_padding_mask,
-                batch_labels=batch_labels if DSBN else None,
+                # batch_labels=batch_labels if DSBN else None,
+                batch_labels = None,
+
                 MVC=config.GEPC,
                 ECS=config.ecs_thres > 0,
                 # do_sample 的作用是在模型预测时引入随机性，通过对模型输出的零概率部分进行采样
                 do_sample = False,
             )
 
-            
-
             masked_positions = input_values.eq(mask_value)  # the postions to predict
             
-            loss = loss_mse = criterion(
+
+
+            loss = loss_mlm = criterion(
                 output_dict["mlm_output"], target_values, masked_positions
             )
-            metrics_to_log = {"train/mse": loss_mse.item()}
+            metrics_to_log = {"train/mse": loss_mlm.item()}
 
             if explicit_zero_prob:
                 loss_zero_log_prob = criterion_neg_log_bernoulli(
@@ -500,7 +515,9 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 )
                 loss = loss + loss_zero_log_prob
                 metrics_to_log.update({"train/nzlp": loss_zero_log_prob.item()})
-            
+
+
+
             if config.GEPC: 
                 loss_gepc = criterion(
                     output_dict["mvc_output"], target_values, masked_positions
@@ -516,7 +533,8 @@ def train(model: nn.Module, loader: DataLoader) -> None:
                 metrics_to_log.update(
                     {"train/mvc_nzlp": loss_gepc_zero_log_prob.item()}
                 )
-            
+
+
             if config.ecs_thres > 0:
                 loss_ecs = 10 * output_dict["loss_ecs"]
                 loss = loss + loss_ecs
@@ -553,14 +571,16 @@ def train(model: nn.Module, loader: DataLoader) -> None:
             )
 
         total_loss += loss.item()
-        total_mse += loss_mse.item()
+
+        total_mlm += loss_mlm.item()
         total_gepc += loss_gepc.item() if config.GEPC else 0.0
         total_error += mre.item()
+
         if batch % log_interval == 0 and batch > 0:
             lr = scheduler.get_last_lr()[0]
             ms_per_batch = (time.time() - start_time) * 1000 / log_interval
             cur_loss = total_loss / log_interval
-            cur_mse = total_mse / log_interval
+            cur_mse = total_mlm / log_interval
             cur_gepc = total_gepc / log_interval if config.GEPC else 0.0
             cur_error = total_error / log_interval
             # ppl = math.exp(cur_loss)
@@ -612,7 +632,9 @@ def evaluate(model: nn.Module, loader: DataLoader) -> float:
                     input_gene_ids,
                     input_values,
                     src_key_padding_mask=src_key_padding_mask,
-                    batch_labels=batch_labels if DSBN else None,
+                    # batch_labels=batch_labels if DSBN else None,
+                    batch_labels=None,
+
                 )
                 output_values = output_dict["mlm_output"]
 
@@ -687,7 +709,9 @@ def eval_testdata(
                 all_values.float(),
                 src_key_padding_mask=src_key_padding_mask,
                 batch_size=config.batch_size,
-                batch_labels=torch.from_numpy(batch_ids).long() if DSBN else None,
+                # batch_labels=torch.from_numpy(batch_ids).long() if DSBN else None,
+                batch_labels=None,
+
                 time_step=0,
                 return_np=True,
             )
@@ -792,7 +816,8 @@ for epoch in range(1, 2):
         # eval on testdata
         results = eval_testdata(
             best_model,
-            adata_t=adata_sorted if per_seq_batch_sample else adata,
+            # adata_t=adata_sorted if per_seq_batch_sample else adata,
+            adata_t= adata,
             include_types=["cls"],
         )
         results["batch_umap"].savefig(
