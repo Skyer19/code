@@ -82,7 +82,7 @@ hyperparameter_defaults = dict(
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=100,
+    epochs=50,
     lr=0.0001,
     batch_size=128,
 
@@ -134,7 +134,7 @@ lr = config.lr
 batch_size = config.batch_size
 eval_batch_size = config.batch_size
 epochs = config.epochs
-early_stop = 20
+early_stop = 10
 
 ######################################################################
 # Settings for the model

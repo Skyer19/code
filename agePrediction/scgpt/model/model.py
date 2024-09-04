@@ -301,8 +301,7 @@ class TransformerModel(nn.Module):
         values: Optional[Tensor] = None,
         src_key_padding_mask: Optional[Tensor] = None,
         gen_iters: int = 1,
-        batch_labels: Optional[Tensor] = None,  # (batch,)
-        
+        batch_labels: Optional[Tensor] = None,  # (batch,)     
     ) -> Tensor:
         """
         Args:
