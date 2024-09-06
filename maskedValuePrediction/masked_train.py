@@ -11,9 +11,9 @@ print("Updated temp directory:", temp_dir)
 import sys
 import importlib
 
-new_path = '/data/mr423/project/code/maskedValuePrediction/'
-if new_path not in sys.path:
-    sys.path.insert(0, new_path)
+# new_path = '/data/mr423/project/code/maskedValuePrediction/'
+# if new_path not in sys.path:
+#     sys.path.insert(0, new_path)
 
 # relaod the scgpt files
 import scgpt
@@ -48,6 +48,7 @@ from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
+import transformers
 
 sys.path.insert(0, "../")
 import scgpt as scg
@@ -67,7 +68,7 @@ sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
 warnings.filterwarnings('ignore')
 
-# os.environ["WANDB_MODE"]= "offline"
+os.environ["WANDB_MODE"]= "offline"
 
 
 
@@ -83,7 +84,7 @@ hyperparameter_defaults = dict(
     mask_ratio=0.4, # Default mask ratio
 
     n_bins=101, # Default number of bins for value binning in data pre-processing
-    epochs=15, # Default number of epochs for fine-tuning
+    epochs=30, # Default number of epochs for fine-tuning
     lr=1e-4, # Default learning rate for fine-tuning
     batch_size=64, # Default batch size for fine-tuning
     
@@ -386,7 +387,7 @@ def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
         pad_value=pad_value,
     )
     print(
-        f"random masking at epoch {epoch:3d}, ratio of masked values in train: ",
+        f"random masking: ratio of masked values in train: ",
         f"{(masked_values_train == mask_value).sum() / (masked_values_train - pad_value).count_nonzero():.4f}",
     )
 
@@ -531,21 +532,56 @@ print(model)
 wandb.watch(model)
 
 
+train_data_pt, valid_data_pt = prepare_data(sort_seq_batch=False)
 
-
+train_loader = prepare_dataloader(
+    train_data_pt,
+    batch_size=batch_size,
+    shuffle=False,
+    intra_domain_shuffle=True,
+    drop_last=False,
+)
+valid_loader = prepare_dataloader(
+    valid_data_pt,
+    batch_size=config.batch_size,
+    shuffle=False,
+    intra_domain_shuffle=False,
+    drop_last=False,
+)
 
 
 ######################################################################
 # Loss function
 ######################################################################
 criterion = masked_mse_loss
-criterion_dab = nn.CrossEntropyLoss()
+# criterion_dab = nn.CrossEntropyLoss()
 
-optimizer = torch.optim.Adam(
-    model.parameters(), lr=lr, eps=1e-4 if config.amp else 1e-8
-)
+# optimizer = torch.optim.Adam(model.parameters(), lr=lr, eps=1e-4)
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, eps=1e-8)
 
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=config.schedule_ratio)
+# scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = 100, gamma=0.99)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
+warmup_ratio_or_step = 0.1
+
+# setup scheduler
+if warmup_ratio_or_step > 0:
+    total_num_batches = len(train_loader) * config.epochs
+    warmup_steps = (
+        int(total_num_batches * warmup_ratio_or_step)
+        if warmup_ratio_or_step < 1
+        else int(warmup_ratio_or_step)
+    )
+    scheduler = transformers.get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_num_batches,
+        last_epoch=-1,
+    )
+else:
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = 100, gamma=0.99)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=3, verbose=True)
+
 scaler = torch.cuda.amp.GradScaler(enabled=config.amp)
 
 
@@ -659,48 +695,6 @@ def train(model: nn.Module, loader: DataLoader) -> None:
             "epoch": epoch,
         },
     )
-
-
-
-        # if batch % log_interval == 0 and batch > 0:
-        #     lr = scheduler.get_last_lr()[0]
-        #     ms_per_batch = (time.time() - start_time) * 1000 / log_interval
-            
-        #     cur_loss = total_loss / log_interval
-        #     cur_mse = total_mlm / log_interval
-        #     cur_gepc = total_gepc / log_interval if config.GEPC else 0.0
-        #     cur_error = total_error / log_interval
-        #     # ppl = math.exp(cur_loss)
-        #     logger.info(
-        #         f"| epoch {epoch:3d} | {batch:3d}/{num_batches:3d} batches | "
-        #         f"lr {lr:05.4f} | ms/batch {ms_per_batch:5.2f} | "
-        #         f"loss {cur_loss:5.2f} | mse {cur_mse:5.2f} | mre {cur_error:5.2f} |"
-        #         + (f"gepc {cur_gepc:5.2f} |" if config.GEPC else "")
-        #     )
-        #     total_loss = 0
-        #     total_mlm = 0
-        #     total_gepc = 0
-
-        #     total_error = 0
-
-        #     start_time = time.time()
-
-    # logger.info("-" * 89)
-    # logger.info(f"Epoch {epoch}/{epochs}")
-    # logger.info(
-    # f"| train | total_num {total_num} | epoch loss {epoch_loss:5.4f} | precision {precision:5.4f} | " 
-    # f" recall {recall:5.4f} | f1_weight {f1_weight:5.4f} | f1_micro {f1_micro:5.4f} | f1_macro {f1_macro:5.4f} |" 
-    # f" accuracy {accuracy:5.4f}")
-
-
-# def define_wandb_metrcis():
-#     wandb.define_metric("valid/mse", summary="min", step_metric="epoch")
-#     wandb.define_metric("valid/mre", summary="min", step_metric="epoch")
-#     wandb.define_metric("valid/dab", summary="min", step_metric="epoch")
-#     wandb.define_metric("valid/sum_mse_dab", summary="min", step_metric="epoch")
-#     wandb.define_metric("test/avg_bio", summary="max")
-
-
 
 
 
@@ -850,16 +844,17 @@ def eval_testdata(
         return results
 '''
 
-
-
 best_val_loss = float("inf")
 best_avg_bio = 0.0
 best_model = None
 
-for epoch in range(1, epochs + 1):
+for epoch in range(0, epochs):
 # for epoch in range(1, 2):
 
+    print(f"epoch: {epoch}")
+
     train_data_pt, valid_data_pt = prepare_data(sort_seq_batch=False)
+
     train_loader = prepare_dataloader(
         train_data_pt,
         batch_size=batch_size,
@@ -879,7 +874,7 @@ for epoch in range(1, epochs + 1):
         train(model,loader=train_loader,)
 
     val_loss, val_mre = evaluate(model,loader=valid_loader,)
-    scheduler.step()
+    scheduler.step(val_loss)
 
 
     logger.info("-" * 89)
