@@ -68,7 +68,7 @@ sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
 warnings.filterwarnings('ignore')
 
-os.environ["WANDB_MODE"]= "offline"
+# os.environ["WANDB_MODE"]= "offline"
 
 
 
@@ -88,7 +88,7 @@ hyperparameter_defaults = dict(
     lr=1e-4, # Default learning rate for fine-tuning
     batch_size=64, # Default batch size for fine-tuning
     
-    layer_size=128,
+    layer_size=256,
     nlayers=4,
     nhead=4, # if load model, batch_size, layer_size, nlayers, nhead will be ignored
     
