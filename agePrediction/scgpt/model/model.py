@@ -247,6 +247,7 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(
             total_embs, src_key_padding_mask=src_key_padding_mask
         )
+        # print(output.shape)
         return output  # (batch, seq_len, embsize)
 
 
@@ -293,90 +294,90 @@ class TransformerModel(nn.Module):
                 " or `self.domain_spec_batchnorm` is True"
             )
 
-    def generate(
+    # def generate(
             
-        self,
-        cell_emb: Tensor,
-        src: Tensor,
-        values: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[Tensor] = None,
-        gen_iters: int = 1,
-        batch_labels: Optional[Tensor] = None,  # (batch,)     
-    ) -> Tensor:
-        """
-        Args:
-            cell_emb(:obj:`Tensor`): shape (batch, embsize)
-            src(:obj:`Tensor`): shape (batch, seq_len)
-            values(:obj:`Tensor`): shape (batch, seq_len), optional
-            src_key_padding_mask(:obj:`Tensor`): shape (batch, seq_len), optional
-            gen_iters(:obj:`int`): number of generation iterations
-            batch_labels(:obj:`Tensor`): shape (batch,), optional
-        """
-        # TODO: should have a tag indicate the generation mode
-        # TODO: if gen_iters > 1, should have a tag indicate the current iteration
+    #     self,
+    #     cell_emb: Tensor,
+    #     src: Tensor,
+    #     values: Optional[Tensor] = None,
+    #     src_key_padding_mask: Optional[Tensor] = None,
+    #     gen_iters: int = 1,
+    #     batch_labels: Optional[Tensor] = None,  # (batch,)     
+    # ) -> Tensor:
+    #     """
+    #     Args:
+    #         cell_emb(:obj:`Tensor`): shape (batch, embsize)
+    #         src(:obj:`Tensor`): shape (batch, seq_len)
+    #         values(:obj:`Tensor`): shape (batch, seq_len), optional
+    #         src_key_padding_mask(:obj:`Tensor`): shape (batch, seq_len), optional
+    #         gen_iters(:obj:`int`): number of generation iterations
+    #         batch_labels(:obj:`Tensor`): shape (batch,), optional
+    #     """
+    #     # TODO: should have a tag indicate the generation mode
+    #     # TODO: if gen_iters > 1, should have a tag indicate the current iteration
 
-        print(111111)
+    #     print(111111)
         
 
-        try:
-            self._check_batch_labels(batch_labels)
-        except:
-            import warnings
+    #     try:
+    #         self._check_batch_labels(batch_labels)
+    #     except:
+    #         import warnings
 
-            warnings.warn(
-                "batch_labels is required but not provided, using zeros instead"
-            )
-            batch_labels = torch.zeros(
-                cell_emb.shape[0], dtype=torch.long, device=cell_emb.device
-            )
+    #         warnings.warn(
+    #             "batch_labels is required but not provided, using zeros instead"
+    #         )
+    #         batch_labels = torch.zeros(
+    #             cell_emb.shape[0], dtype=torch.long, device=cell_emb.device
+    #         )
 
-        src = self.encoder(src)  # (batch, seq_len, embsize)
+    #     src = self.encoder(src)  # (batch, seq_len, embsize)
 
-        if values is not None:
-            values = self.value_encoder(values)  # (batch, seq_len, embsize)
-            if self.input_emb_style == "scaling":
-                values = values.unsqueeze(2)
-                total_embs = src * values
-            else:
-                total_embs = src + values
-        else:
-            total_embs = src
+    #     if values is not None:
+    #         values = self.value_encoder(values)  # (batch, seq_len, embsize)
+    #         if self.input_emb_style == "scaling":
+    #             values = values.unsqueeze(2)
+    #             total_embs = src * values
+    #         else:
+    #             total_embs = src + values
+    #     else:
+    #         total_embs = src
 
-        if getattr(self, "dsbn", None) is not None:
-            batch_label = int(batch_labels[0].item())
-            total_embs = self.dsbn(total_embs.permute(0, 2, 1), batch_label).permute(
-                0, 2, 1
-            )  # the batch norm always works on dim 1
-        elif getattr(self, "bn", None) is not None:
-            total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
+    #     if getattr(self, "dsbn", None) is not None:
+    #         batch_label = int(batch_labels[0].item())
+    #         total_embs = self.dsbn(total_embs.permute(0, 2, 1), batch_label).permute(
+    #             0, 2, 1
+    #         )  # the batch norm always works on dim 1
+    #     elif getattr(self, "bn", None) is not None:
+    #         total_embs = self.bn(total_embs.permute(0, 2, 1)).permute(0, 2, 1)
 
-        total_embs[:, 0, :] = cell_emb
+    #     total_embs[:, 0, :] = cell_emb
 
-        if src_key_padding_mask is None:
-            src_key_padding_mask = torch.zeros(
-                total_embs.shape[:2], dtype=torch.bool, device=total_embs.device
-            )
-        transformer_output = self.transformer_encoder(
-            total_embs, src_key_padding_mask=src_key_padding_mask
-        )
+    #     if src_key_padding_mask is None:
+    #         src_key_padding_mask = torch.zeros(
+    #             total_embs.shape[:2], dtype=torch.bool, device=total_embs.device
+    #         )
+    #     transformer_output = self.transformer_encoder(
+    #         total_embs, src_key_padding_mask=src_key_padding_mask
+    #     )
 
-        if self.use_batch_labels:
-            batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
-        mlm_output = self.decoder(
-            transformer_output
-            if not self.use_batch_labels
-            else torch.cat(
-                [
-                    transformer_output,
-                    batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
-                ],
-                dim=2,
-            ),
-            # else transformer_output + batch_emb.unsqueeze(1),
-        )
-        output = mlm_output["pred"]  # (batch, seq_len)
+    #     if self.use_batch_labels:
+    #         batch_emb = self.batch_encoder(batch_labels)  # (batch, embsize)
+    #     mlm_output = self.decoder(
+    #         transformer_output
+    #         if not self.use_batch_labels
+    #         else torch.cat(
+    #             [
+    #                 transformer_output,
+    #                 batch_emb.unsqueeze(1).repeat(1, transformer_output.shape[1], 1),
+    #             ],
+    #             dim=2,
+    #         ),
+    #         # else transformer_output + batch_emb.unsqueeze(1),
+    #     )
+    #     output = mlm_output["pred"]  # (batch, seq_len)
 
-        return output  # (batch, seq_len)
+    #     return output  # (batch, seq_len)
 
     def forward(
         self,
@@ -438,6 +439,8 @@ class TransformerModel(nn.Module):
         #     output["mlm_output"] = mlm_output["pred"]  # (batch, seq_len)
         # if self.explicit_zero_prob:
         #     output["mlm_zero_probs"] = mlm_output["zero_probs"]
+
+        # output['attention_weights_list'] = attention_weights_list
 
         
         cell_emb = self._get_cell_emb_from_layer(transformer_output, values)
@@ -784,22 +787,24 @@ class FlashTransformerEncoderLayer(nn.Module):
 
         if self.norm_scheme == "pre":
             src = self.norm1(src)
-            # src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
-            attn_output, attn_weights = self.self_attn(src, key_padding_mask=src_key_padding_mask_)
-            src = src + self.dropout1(attn_output)
+            src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
+            # attn_output, attn_weights = self.self_attn(src, key_padding_mask=src_key_padding_mask_)
+            src = src + self.dropout1(src2)
             src = self.norm2(src)
             src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
             src = src + self.dropout2(src2)
         else:
-            # src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
-            attn_output, attn_weights = self.self_attn(src, key_padding_mask=src_key_padding_mask_)
-            src = src + self.dropout1(attn_output)
+            src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
+            # attn_output, attn_weights = self.self_attn(src, key_padding_mask=src_key_padding_mask_)
+            src = src + self.dropout1(src2)
             src = self.norm1(src)
             src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
             src = src + self.dropout2(src2)
             src = self.norm2(src)
 
-        return src, attn_weights
+        # print(f"attn_weights {attn_weights}")
+
+        return src
 
 
 class GeneEncoder(nn.Module):

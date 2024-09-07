@@ -83,7 +83,7 @@ hyperparameter_defaults = dict(
     load_model="/data/mr423/project/pre_trained_model/scGPT_human",
     n_bins=101,
 
-    epochs=30, # 2 !!!!!!!!!!!!  test only
+    epochs=1, # 2 !!!!!!!!!!!!  test only
     lr=0.0001,
     batch_size=128,   # 128 !!!!!!!!!!!!  test only
 
@@ -511,167 +511,6 @@ pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.param
 print("-"*20)
 print("-"*20)
 
-# 修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改修改
-
-# 列出要解冻的层的名称
-layers_to_unfreeze = [
-    "transformer_encoder.layers.0.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.0.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.0.self_attn.out_proj.weight",
-    "transformer_encoder.layers.0.self_attn.out_proj.bias",
-    "transformer_encoder.layers.0.linear1.weight",
-    "transformer_encoder.layers.0.linear1.bias",
-    "transformer_encoder.layers.0.linear2.weight",
-    "transformer_encoder.layers.0.linear2.bias",
-    "transformer_encoder.layers.0.norm1.weight",
-    "transformer_encoder.layers.0.norm1.bias",
-    "transformer_encoder.layers.0.norm2.weight",
-    "transformer_encoder.layers.0.norm2.bias",
-    "transformer_encoder.layers.1.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.1.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.1.self_attn.out_proj.weight",
-    "transformer_encoder.layers.1.self_attn.out_proj.bias",
-    "transformer_encoder.layers.1.linear1.weight",
-    "transformer_encoder.layers.1.linear1.bias",
-    "transformer_encoder.layers.1.linear2.weight",
-    "transformer_encoder.layers.1.linear2.bias",
-    "transformer_encoder.layers.1.norm1.weight",
-    "transformer_encoder.layers.1.norm1.bias",
-    "transformer_encoder.layers.1.norm2.weight",
-    "transformer_encoder.layers.1.norm2.bias",
-    "transformer_encoder.layers.2.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.2.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.2.self_attn.out_proj.weight",
-    "transformer_encoder.layers.2.self_attn.out_proj.bias",
-    "transformer_encoder.layers.2.linear1.weight",
-    "transformer_encoder.layers.2.linear1.bias",
-    "transformer_encoder.layers.2.linear2.weight",
-    "transformer_encoder.layers.2.linear2.bias",
-    "transformer_encoder.layers.2.norm1.weight",
-    "transformer_encoder.layers.2.norm1.bias",
-    "transformer_encoder.layers.2.norm2.weight",
-    "transformer_encoder.layers.2.norm2.bias",
-    "transformer_encoder.layers.3.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.3.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.3.self_attn.out_proj.weight",
-    "transformer_encoder.layers.3.self_attn.out_proj.bias",
-    "transformer_encoder.layers.3.linear1.weight",
-    "transformer_encoder.layers.3.linear1.bias",
-    "transformer_encoder.layers.3.linear2.weight",
-    "transformer_encoder.layers.3.linear2.bias",
-    "transformer_encoder.layers.3.norm1.weight",
-    "transformer_encoder.layers.3.norm1.bias",
-    "transformer_encoder.layers.3.norm2.weight",
-    "transformer_encoder.layers.3.norm2.bias",
-    "transformer_encoder.layers.4.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.4.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.4.self_attn.out_proj.weight",
-    "transformer_encoder.layers.4.self_attn.out_proj.bias",
-    "transformer_encoder.layers.4.linear1.weight",
-    "transformer_encoder.layers.4.linear1.bias",
-    "transformer_encoder.layers.4.linear2.weight",
-    "transformer_encoder.layers.4.linear2.bias",
-    "transformer_encoder.layers.4.norm1.weight",
-    "transformer_encoder.layers.4.norm1.bias",
-    "transformer_encoder.layers.4.norm2.weight",
-    "transformer_encoder.layers.4.norm2.bias",
-    "transformer_encoder.layers.5.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.5.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.5.self_attn.out_proj.weight",
-    "transformer_encoder.layers.5.self_attn.out_proj.bias",
-    "transformer_encoder.layers.5.linear1.weight",
-    "transformer_encoder.layers.5.linear1.bias",
-    "transformer_encoder.layers.5.linear2.weight",
-    "transformer_encoder.layers.5.linear2.bias",
-    "transformer_encoder.layers.5.norm1.weight",
-    "transformer_encoder.layers.5.norm1.bias",
-    "transformer_encoder.layers.5.norm2.weight",
-    "transformer_encoder.layers.5.norm2.bias",
-    "transformer_encoder.layers.6.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.6.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.6.self_attn.out_proj.weight",
-    "transformer_encoder.layers.6.self_attn.out_proj.bias",
-    "transformer_encoder.layers.6.linear1.weight",
-    "transformer_encoder.layers.6.linear1.bias",
-    "transformer_encoder.layers.6.linear2.weight",
-    "transformer_encoder.layers.6.linear2.bias",
-    "transformer_encoder.layers.6.norm1.weight",
-    "transformer_encoder.layers.6.norm1.bias",
-    "transformer_encoder.layers.6.norm2.weight",
-    "transformer_encoder.layers.6.norm2.bias",
-    "transformer_encoder.layers.7.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.7.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.7.self_attn.out_proj.weight",
-    "transformer_encoder.layers.7.self_attn.out_proj.bias",
-    "transformer_encoder.layers.7.linear1.weight",
-    "transformer_encoder.layers.7.linear1.bias",
-    "transformer_encoder.layers.7.linear2.weight",
-    "transformer_encoder.layers.7.linear2.bias",
-    "transformer_encoder.layers.7.norm1.weight",
-    "transformer_encoder.layers.7.norm1.bias",
-    "transformer_encoder.layers.7.norm2.weight",
-    "transformer_encoder.layers.7.norm2.bias",
-    "transformer_encoder.layers.8.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.8.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.8.self_attn.out_proj.weight",
-    "transformer_encoder.layers.8.self_attn.out_proj.bias",
-    "transformer_encoder.layers.8.linear1.weight",
-    "transformer_encoder.layers.8.linear1.bias",
-    "transformer_encoder.layers.8.linear2.weight",
-    "transformer_encoder.layers.8.linear2.bias",
-    "transformer_encoder.layers.8.norm1.weight",
-    "transformer_encoder.layers.8.norm1.bias",
-    "transformer_encoder.layers.8.norm2.weight",
-    "transformer_encoder.layers.8.norm2.bias",
-    "transformer_encoder.layers.9.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.9.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.9.self_attn.out_proj.weight",
-    "transformer_encoder.layers.9.self_attn.out_proj.bias",
-    "transformer_encoder.layers.9.linear1.weight",
-    "transformer_encoder.layers.9.linear1.bias",
-    "transformer_encoder.layers.9.linear2.weight",
-    "transformer_encoder.layers.9.linear2.bias",
-    "transformer_encoder.layers.9.norm1.weight",
-    "transformer_encoder.layers.9.norm1.bias",
-    "transformer_encoder.layers.9.norm2.weight",
-    "transformer_encoder.layers.9.norm2.bias",
-    "transformer_encoder.layers.10.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.10.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.10.self_attn.out_proj.weight",
-    "transformer_encoder.layers.10.self_attn.out_proj.bias",
-    "transformer_encoder.layers.10.linear1.weight",
-    "transformer_encoder.layers.10.linear1.bias",
-    "transformer_encoder.layers.10.linear2.weight",
-    "transformer_encoder.layers.10.linear2.bias",
-    "transformer_encoder.layers.10.norm1.weight",
-    "transformer_encoder.layers.10.norm1.bias",
-    "transformer_encoder.layers.10.norm2.weight",
-    "transformer_encoder.layers.10.norm2.bias",
-    "transformer_encoder.layers.11.self_attn.Wqkv.weight",
-    "transformer_encoder.layers.11.self_attn.Wqkv.bias",
-    "transformer_encoder.layers.11.self_attn.out_proj.weight",
-    "transformer_encoder.layers.11.self_attn.out_proj.bias",
-    "transformer_encoder.layers.11.linear1.weight",
-    "transformer_encoder.layers.11.linear1.bias",
-    "transformer_encoder.layers.11.linear2.weight",
-    "transformer_encoder.layers.11.linear2.bias",
-    "transformer_encoder.layers.11.norm1.weight",
-    "transformer_encoder.layers.11.norm1.bias",
-    "transformer_encoder.layers.11.norm2.weight",
-    "transformer_encoder.layers.11.norm2.bias",
-    "linear.weight",
-    "linear.bias",
-    "reg_decoder.fc1.weight",
-    "reg_decoder.fc1.bias",
-    "reg_decoder.bn1.weight",
-    "reg_decoder.bn1.bias",
-    "reg_decoder.fc2.weight",
-    "reg_decoder.fc2.bias",
-    "reg_decoder.bn2.weight",
-    "reg_decoder.bn2.bias",
-    "reg_decoder.fc4.weight",
-    "reg_decoder.fc4.bias"
-]
 
 for name, param in model.named_parameters():
     print(f"name: {name}")
@@ -684,25 +523,6 @@ print("\n")
 for name, param in model.named_parameters():
     param.requires_grad = True    
     
-    # # 默认情况下冻结所有参数
-    # param.requires_grad = False
-    # # 解冻指定的层
-    # if name in layers_to_unfreeze:
-    #     param.requires_grad = True
-    #     print(f"Unfreezing layer: {name}")
-
-
-
-
-# # Freeze all pre-decoder weights
-# for name, para in model.named_parameters():
-#     # print("-"*20)
-#     print(f"name: {name}")
-
-#     # if config.freeze and "encoder" in name and "transformer_encoder" not in name:
-#     if config.freeze and "encoder" in name:
-#         print(f"freezing weights for: {name}")
-#         para.requires_grad = False
 
 post_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
 

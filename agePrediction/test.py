@@ -516,13 +516,12 @@ def evaluate(model: nn.Module, loader: DataLoader, return_raw: bool = False) -> 
     # return total_loss / total_num, mse, mae, rmse, r2, mape
     return total_loss / total_num
 
-
+'''
 ######################################################################
 # Test the model
 ######################################################################
 def test(model: nn.Module, adata: DataLoader):
 
-    handles = register_attention_hooks(model)
     
     all_counts = (
         adata.layers[input_layer_key].A
@@ -611,10 +610,6 @@ def test(model: nn.Module, adata: DataLoader):
                 all_preds.append(output_values.cpu())
                 all_targets.append(age.cpu())
             
-            # 在前向传播完成后可视化注意力权重
-            tokens = [vocab.itos[i.item()] for i in input_gene_ids[0]]  # 取 batch 中第一个样本
-            visualize_attention_weights(attention_weights, tokens, 'layer_0')
-            visualize_attention_weights(attention_weights, tokens, 'layer_11')
 
     # 将所有批次的预测值和真实值连接起来
     all_preds = torch.cat(all_preds)
@@ -639,9 +634,6 @@ def test(model: nn.Module, adata: DataLoader):
     f" r2 {r2:5.4f} | mape {mape:5.4f}")
     logger.info("-" * 89)
 
-        # 移除 Hook，防止影响后续操作
-    for handle in handles:
-        handle.remove()
     
 
 
@@ -650,62 +642,146 @@ print("start test")
 test(model, adata_test)
 
 
-
-
-
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# 1. 定义 Hook 函数来提取注意力权重
-attention_weights = {}
-
-def get_attention_weights_hook(layer_name):
-    def hook(module, input, output):
-        # output[1] 是注意力权重 (batch_size, n_heads, seq_len, seq_len)
-        attention_weights[layer_name] = output[1].detach().cpu()
-    return hook
-
-# 2. 注册 Hook 到第0层和第11层的注意力层
-def register_attention_hooks(model):
-    handles = []
-    
-    # 第0层的注意力权重
-    handle_0 = model.transformer_encoder.layers[0].self_attn.register_forward_hook(get_attention_weights_hook('layer_0'))
-    handles.append(handle_0)
-    
-    # 第11层的注意力权重
-    handle_11 = model.transformer_encoder.layers[11].self_attn.register_forward_hook(get_attention_weights_hook('layer_11'))
-    handles.append(handle_11)
-    
-    return handles
-
-
-# 可视化函数
-def visualize_attention_weights(attention_weights, input_tokens, layer_name):
-    """
-    可视化注意力权重
-    Args:
-        attention_weights (torch.Tensor): 注意力权重张量，形状为 (batch_size, n_heads, seq_len, seq_len)
-        input_tokens (List[str]): 输入的标记序列
-        layer_name (str): 当前处理的层名称
-    """
-    # 假设我们只对第一个样本（batch内第一个）进行可视化
-    attn = attention_weights[layer_name][0]  # (n_heads, seq_len, seq_len)
-    n_heads = attn.shape[0]
-    
-    for i in range(n_heads):
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(attn[i].numpy(), 
-                    xticklabels=input_tokens, 
-                    yticklabels=input_tokens, 
-                    cmap="viridis", cbar=True)
-        plt.title(f'{layer_name} - Attention Head {i+1}')
-        plt.xlabel('Input Tokens')
-        plt.ylabel('Input Tokens')
-        plt.show()
-
-
-
-
 wandb.finish()
+
+'''
+
+all_counts = (
+    adata_test.layers[input_layer_key].A
+    if issparse(adata_test.layers[input_layer_key])
+    else adata_test.layers[input_layer_key]
+)
+
+# print(adata_test.layers[input_layer_key])
+
+age = adata_test.obs["age"].tolist()
+age = np.array(age)
+
+
+tokenized_test = tokenize_and_pad_batch(
+    all_counts,
+    gene_ids,
+    max_len=max_seq_len,
+    vocab=vocab,
+    pad_token=pad_token,
+    pad_value=pad_value,
+    append_cls=True,  # append <cls> token at the beginning
+    include_zero_gene=False,
+)
+
+tensor_age_test = torch.from_numpy(age).float()
+
+
+test_data_pt = {
+    "gene_ids": tokenized_test["genes"],
+    "values": tokenized_test["values"],
+    "age": tensor_age_test,
+}
+
+test_loader = DataLoader(
+    dataset=SeqDataset(test_data_pt),
+    batch_size=eval_batch_size,
+    shuffle=False,
+    drop_last=False,
+    num_workers=min(len(os.sched_getaffinity(0)), eval_batch_size // 2),
+    pin_memory=True,
+    )
+
+import torch
+import numpy as np
+
+def smooth_grad(model, input_gene_ids, input_values, target_age, vocab, pad_token, noise_level=0.1, num_samples=50):
+    """
+    Apply SmoothGrad to understand which genes are more important for age prediction.
+    
+    Parameters:
+    - model: the trained transformer model.
+    - input_gene_ids: the input gene IDs (tokenized).
+    - input_values: the input gene expression values.
+    - target_age: the target age for prediction.
+    - vocab: the gene vocabulary.
+    - pad_token: the token used for padding.
+    - noise_level: the amount of noise to add to the input.
+    - num_samples: the number of noisy samples to generate.
+    
+    Returns:
+    - avg_gradients: averaged gradients with respect to the input gene expression values.
+    """
+    model.eval()
+    gradients = []
+
+    # Ensure model is in evaluation mode
+    input_gene_ids = input_gene_ids.to(device)
+    input_values = input_values.to(device)
+    target_age = target_age.to(device)
+
+    # Mask for padding tokens
+    src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
+
+    # Create multiple noisy versions of the input and calculate gradients
+    for _ in range(num_samples):
+        noisy_input_values = input_values + noise_level * torch.randn_like(input_values)
+        noisy_input_values.requires_grad = True
+
+        with torch.cuda.amp.autocast(enabled=config.amp):
+            output_dict = model(
+                input_gene_ids,
+                noisy_input_values,
+                src_key_padding_mask=src_key_padding_mask,
+                batch_labels=None,
+                CLS=False, 
+                CCE=False,
+                MVC=False,
+                ECS=False,
+                do_sample=False,
+            )
+            output_values = output_dict["reg_output"].squeeze()
+
+            # Compute loss and backpropagate
+            loss = criterion(output_values, target_age)
+            model.zero_grad()
+            loss.backward()
+
+            # Collect gradients
+            gradients.append(noisy_input_values.grad.cpu().numpy())
+
+    # Average the gradients
+    avg_gradients = np.mean(gradients, axis=0)
+    
+    return avg_gradients
+
+
+# 从测试数据中获取一个批次的输入
+for batch_data in test_loader:
+    input_gene_ids = batch_data["gene_ids"]
+    input_values = batch_data["values"]
+    target_age = batch_data["age"]
+    
+    # 使用 SmoothGrad 方法计算基因重要性
+    avg_gradients = smooth_grad(
+        model,
+        input_gene_ids,
+        input_values,
+        target_age,
+        vocab,
+        pad_token=pad_token,
+        noise_level=0.1,
+        num_samples=50
+    )
+    
+    # 可视化平均梯度值，显示哪些基因对预测最重要
+    gene_names = adata.var["gene_name"].tolist()
+    important_genes = np.mean(np.abs(avg_gradients), axis=0)  # 对不同样本取平均值
+    sorted_indices = np.argsort(-important_genes)  # 由大到小排序
+
+    top_genes = [gene_names[i] for i in sorted_indices[:20]]  # 获取最重要的前20个基因
+    top_importances = important_genes[sorted_indices[:20]]
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=top_importances, y=top_genes)
+    plt.xlabel("Importance Score")
+    plt.ylabel("Gene")
+    plt.title("Top 20 Important Genes for Age Prediction (SmoothGrad)")
+    plt.show()
+
+    break  # 只处理一个批次
