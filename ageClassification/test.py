@@ -236,8 +236,8 @@ adata.var["gene_name"] = adata.var.index.tolist()
 if config.load_model is not None:
     model_dir = config.load_model
 
-    model_file = "./trained_model/trained_all_model/model.pt"
-    vocab_file = "./trained_model/trained_all_model/vocab.json"
+    model_file = "/data/mr423/project/code/ageClassification/trained_model/trained_all_model/model.pt"
+    vocab_file = "/data/mr423/project/code/ageClassification/trained_model/trained_all_model/vocab.json"
 
 
     vocab = GeneVocab.from_file(vocab_file)
@@ -280,7 +280,7 @@ preprocessor = Preprocessor(
 adata_test = adata[adata.obs["str_batch"] == "1"]
 adata = adata[adata.obs["str_batch"] == "0"]
 
-preprocessor(adata, batch_key=None)
+# preprocessor(adata, batch_key=None)
 preprocessor(adata_test, batch_key=None)
 
 ######################################################################
@@ -291,25 +291,26 @@ input_layer_key = {  # the values of this map coorespond to the keys in preproce
     "log1p": "X_normed",
     "binned": "X_binned",
 }[input_style]
-all_counts = (
-    adata.layers[input_layer_key].A
-    if issparse(adata.layers[input_layer_key])
-    else adata.layers[input_layer_key]
-)
-genes = adata.var["gene_name"].tolist()
+
+# all_counts = (
+#     adata.layers[input_layer_key].A
+#     if issparse(adata.layers[input_layer_key])
+#     else adata.layers[input_layer_key]
+# )
+genes = adata_test.var["gene_name"].tolist()
 
 ageGroup_labels = adata.obs["ageGroup_id"].tolist()  # make sure count from 0
 ageGroup_labels = np.array(ageGroup_labels)
 
 
-(
-    train_data,
-    valid_data,
-    train_ageGroup,
-    valid_ageGroup,
-) = train_test_split(
-    all_counts, ageGroup_labels, test_size=0.2, shuffle=True
-)
+# (
+#     train_data,
+#     valid_data,
+#     train_ageGroup,
+#     valid_ageGroup,
+# ) = train_test_split(
+#     all_counts, ageGroup_labels, test_size=0.2, shuffle=True
+# )
 
 
 if config.load_model is None:
@@ -417,7 +418,9 @@ if config.load_model is not None:
         model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict)
 
-pre_freeze_param_count = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters() if p.requires_grad).values())
+# 初始化模型之后，修改参数的冻结状态
+for name, param in model.named_parameters():
+    param.requires_grad = True
 
 print("-"*20)
 print("-"*20)
@@ -484,98 +487,122 @@ test_loader = DataLoader(
 
 
 
-def smooth_grad(model, input_gene_ids, input_values, ageGroup, vocab, pad_token, noise_level=0.1, num_samples=50):
+def test(model: nn.Module):
+    
 
     model.eval()
-    gradients = []
 
-    input_gene_ids = input_gene_ids.to(device)
-    input_values = input_values.to(device)
-    ageGroup = ageGroup.to(device)
+    total_loss = 0.0
+    total_num = 0
+
+    all_preds = []
+    all_labels = []
     
-    input_values.requires_grad =True
+    with torch.no_grad():
+        for batch_data in test_loader:
+            input_gene_ids = batch_data["gene_ids"].to(device)
+            input_values = batch_data["values"].to(device)
+            ageGroup = batch_data["ageGroup"].to(device)
 
-    # Mask for padding tokens
-    src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
-
-    for _ in range(num_samples):
-        # 添加噪声并确保 `requires_grad=True`，以便在反向传播时计算梯度
-        noisy_input_values = input_values + noise_level * torch.randn_like(input_values)
-        # noisy_input_values.requires_grad = True  # 确保启用梯度追踪
-
-        print(f"noisy_input_values: {noisy_input_values}")
-
-        with torch.cuda.amp.autocast(enabled=config.amp):
-            output_dict = model(
-                input_gene_ids,
-                noisy_input_values,
-                src_key_padding_mask=src_key_padding_mask,
-                batch_labels=None,
-                CLS=False, 
-                CCE=False,
-                MVC=False,
-                ECS=False,
-                do_sample=False,
-            )
-            output_values = output_dict["classified_output"]
-
-            print(f"Output values: {output_values}")
-
-            # 计算损失并进行反向传播
-            loss = criterion_cls(output_values, ageGroup)
-            print(f"Loss: {loss}")
+            src_key_padding_mask = input_gene_ids.eq(vocab[pad_token])
+            with torch.cuda.amp.autocast(enabled=config.amp):
+                output_dict = model(
+                    input_gene_ids,
+                    input_values,
+                    src_key_padding_mask=src_key_padding_mask,
+                    batch_labels=None,
+                    CLS=True, 
+                    CCE=False,
+                    MVC=False,
+                    ECS=False,
+                    do_sample=False,
+                    #generative_training = False,
+                )
+                    
+                loss = criterion_cls(output_dict["classified_output"], ageGroup)
             
-            model.zero_grad()  # 清除之前的梯度
-            loss.backward(retain_graph=True)  # 保留计算图
+            total_loss += loss.item() * len(input_gene_ids)
+            total_num += len(input_gene_ids)
+                   
+            preds = output_dict["classified_output"].argmax(dim=1).cpu().numpy()
+            labels = ageGroup.cpu().numpy()
 
-            # 检查梯度是否被正确计算
-            if noisy_input_values.grad is None:
-                print("No gradient for noisy_input_values")
-            else:
-                gradients.append(noisy_input_values.grad.cpu().numpy())
+            all_preds.extend(preds)
+            all_labels.extend(labels)
 
-    # 平均多个样本的梯度
-    avg_gradients = np.mean(gradients, axis=0)
+        all_preds = np.array(all_preds)
+        all_labels = np.array(all_labels)
     
-    return avg_gradients
-
-
-
-for batch_data in test_loader:
-    input_gene_ids = batch_data["gene_ids"]
-    input_values = batch_data["values"]
-    ageGroup = batch_data["ageGroup"]
+    precision = precision_score(all_labels, all_preds, average='weighted')
+    recall = recall_score(all_labels, all_preds, average='weighted')
+    f1_weight = f1_score(all_labels, all_preds, average='weighted')
+    f1_micro = f1_score(all_labels, all_preds, average='micro')
+    f1_macro = f1_score(all_labels, all_preds, average='macro')
+    accuracy = accuracy_score(all_labels, all_preds)
+   
+    logger.info("-" * 89)
+    logger.info("-" * 89)
     
-    # 使用 SmoothGrad 方法计算基因重要性
-    avg_gradients = smooth_grad(
-        model,
-        input_gene_ids,
-        input_values,
-        ageGroup,
-        vocab,
-        pad_token=pad_token,
-        noise_level=0.1,
-        num_samples=50
-    )
+    logger.info(
+    f"| test | total_num {total_num} | precision {precision:5.4f} | " 
+    f" recall {recall:5.4f} | f1_weight {f1_weight:5.4f} | f1_micro {f1_micro:5.4f} | f1_macro {f1_macro:5.4f} | " 
+    f" accuracy {accuracy:5.4f}")
+    logger.info("-" * 89)    
     
-    # 可视化平均梯度值，显示哪些基因对预测最重要
-    gene_names = adata.var["gene_name"].tolist()
-    important_genes = np.mean(np.abs(avg_gradients), axis=0)  # 对不同样本取平均值
     
-    sorted_indices = np.argsort(-important_genes)  # 由大到小排序
-    top_genes = [gene_names[i] for i in sorted_indices[:20]]  # 获取最重要的前20个基因
-    top_importances = important_genes[sorted_indices[:20]]
+
+    # 保存数据到 CSV 文件
+    all_preds_list = all_preds.tolist()
+    all_labels_list = all_labels.tolist()
+
+    all_preds_save_dir = str(save_dir) + "/all_preds.txt"
+    all_labels_save_dir = str(save_dir) + "/all_targets.txt"
+
+    with open(all_preds_save_dir, "w") as file:
+        file.write(str(all_preds_list))
+
+    with open(all_labels_save_dir, "w") as file:
+        file.write(str(all_labels_list))
+
+    all_preds_df = pd.DataFrame(all_preds_list, columns=['Predictions'])
+    all_labels_df = pd.DataFrame(all_labels_list, columns=['Target'])
+
+    combined_df = pd.concat([all_preds_df, all_labels_df], axis=1)
+    combined_df['Predictions'] = combined_df['Predictions'].round(1)
+    combined_df['Target'] = combined_df['Target'].round(1)
+
+    combined_df.to_csv(str(save_dir) + "/output.csv", index=False)
+
+    
+
+# %%
+test(model, adata_test)
+
+# %%
+
+df = pd.read_csv(str(save_dir) + "/output.csv")
+
+y_true = df['Target']
+y_pred = df['Predictions']
 
 
-    plt.figure(figsize=(10, 6))
-    sns.barplot(x=top_importances, y=top_genes)
-    plt.xlabel("Not importance Score")
-    plt.ylabel("Plasma protein-encoding genes")
-    # plt.title("Top 20 not important Genes for Age Prediction")
+# 定义评估指标函数
+precision = precision_score(y_true, y_pred, average='weighted')
+recall = recall_score(y_true, y_pred, average='weighted')
+f1_weight = f1_score(y_true, y_pred, average='weighted')
+f1_micro = f1_score(y_true, y_pred, average='micro')
+f1_macro = f1_score(y_true, y_pred, average='macro')
+accuracy = accuracy_score(y_true, y_pred)
+conf_matrix = confusion_matrix(y_true, y_pred)
 
-    output_path = "./top_no_important_genes_smoothgrad.png"  # 你可以修改保存路径和文件名
-    plt.savefig(output_path, dpi=300, bbox_inches="tight")  # dpi 300确保高质量保存，bbox_inches="tight" 去除空白边框
+# 输出结果
+print(f'precision: {precision}')
+print(f'recall: {recall}')
+print(f'f1_weight: {f1_weight}')
+print(f'f1_micro: {f1_micro}')
+print(f'f1_macro: {f1_macro}')
+print(f'accuracy: {accuracy:.2f}')
+print(f'conf_matrix: {conf_matrix}')
 
-    plt.show()
+wandb.finish()
 
-    break  # 只处理一个批次
